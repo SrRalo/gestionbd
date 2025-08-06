@@ -1,0 +1,22 @@
+# Dependencias principales
+streamlit>=1.28.0
+psycopg2-binary>=2.9.7
+python-dotenv>=1.0.0
+pandas>=2.0.0
+
+# Dependencias adicionales para funcionalidades específicas
+# Para manejo de fechas y horas (ya incluidas en datetime, pero por claridad)
+# datetime es parte de la biblioteca estándar de Python
+
+# Para hashlib (parte de la biblioteca estándar)
+# Para re (parte de la biblioteca estándar)
+# Para os (parte de la biblioteca estándar)
+# Para sys (parte de la biblioteca estándar)
+
+# Versiones específicas recomendadas para estabilidad
+streamlit==1.28.1
+psycopg2-binary==2.9.7
+python-dotenv==1.0.0
+pandas==2.1.1
+numpy>=1.24.0
+openpyxl>=3.1.0 
