@@ -41,12 +41,20 @@ class LoginView:
             result = self.auth_manager.autenticar_usuario(username, password)
             
             if result and result.get('success'):
-                # Login exitoso
+                # Login exitoso - guardar información completa del usuario
                 st.session_state.authenticated = True
-                st.session_state.current_user = username
+                st.session_state.current_user = {
+                    'username': username,
+                    'rol_principal': result['rol_principal'],
+                    'roles': result['roles'],
+                    'info_usuario': result['info_usuario']
+                }
                 st.session_state.user_role = result['rol_principal']
                 st.session_state.user_info = result['info_usuario']
                 st.session_state.db_connection = result['connection']
+                
+                # Establecer permisos de administrador
+                st.session_state.is_admin = result['rol_principal'] == 'admin_reservas'
                 
                 st.success("✅ ¡Inicio de sesión exitoso!")
                 st.rerun()

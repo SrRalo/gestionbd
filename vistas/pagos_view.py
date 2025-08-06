@@ -322,9 +322,57 @@ class PagosView:
         """Obtener reservas pendientes de pago"""
         try:
             with self.db_connection.cursor(cursor_factory=RealDictCursor) as cursor:
+                # Intentar usar la vista primero
+                try:
+                    cursor.execute("""
+                        SELECT * FROM vista_reservas_pendientes_pago
+                        ORDER BY fecha_reserva DESC, hora_inicio
+                    """)
+                    result = cursor.fetchall()
+                    if result:
+                        return result
+                except Exception as vista_error:
+                    st.warning(f"⚠️ No se pudo usar la vista optimizada: {vista_error}")
+                
+                # Fallback: consulta directa
                 cursor.execute("""
-                    SELECT * FROM vista_reservas_pendientes_pago
-                    ORDER BY fecha_reserva DESC, hora_inicio
+                    SELECT 
+                        r.id as reserva_id,
+                        r.fecha_reserva,
+                        r.hora_inicio,
+                        r.hora_fin,
+                        r.duracion,
+                        r.estado as estado_reserva,
+                        r.observaciones as observaciones_reserva,
+                        c.id as cliente_id,
+                        c.nombre as nombre_cliente,
+                        c.apellido as apellido_cliente,
+                        c.email as email_cliente,
+                        c.telefono as telefono_cliente,
+                        ca.id as cancha_id,
+                        ca.nombre as nombre_cancha,
+                        ca.tipo_deporte,
+                        ca.precio_hora,
+                        (r.duracion * ca.precio_hora) as precio_total_calculado,
+                        COALESCE(SUM(p.monto), 0) as total_pagado,
+                        ((r.duracion * ca.precio_hora) - COALESCE(SUM(p.monto), 0)) as saldo_pendiente,
+                        CASE 
+                            WHEN COALESCE(SUM(p.monto), 0) >= (r.duracion * ca.precio_hora) THEN 'Pagado'
+                            WHEN COALESCE(SUM(p.monto), 0) > 0 THEN 'Pago Parcial'
+                            ELSE 'Sin Pago'
+                        END as estado_pago,
+                        r.fecha_creacion,
+                        r.fecha_actualizacion
+                    FROM reservas r
+                    JOIN clientes c ON r.cliente_id = c.id
+                    JOIN canchas ca ON r.cancha_id = ca.id
+                    LEFT JOIN pagos p ON r.id = p.reserva_id AND p.estado = 'Completado'
+                    WHERE r.estado IN ('confirmada', 'pendiente', 'Confirmada', 'Pendiente')
+                    GROUP BY r.id, r.fecha_reserva, r.hora_inicio, r.hora_fin, r.duracion, r.estado, r.observaciones,
+                             c.id, c.nombre, c.apellido, c.email, c.telefono,
+                             ca.id, ca.nombre, ca.tipo_deporte, ca.precio_hora, r.fecha_creacion, r.fecha_actualizacion
+                    HAVING COALESCE(SUM(p.monto), 0) < (r.duracion * ca.precio_hora)
+                    ORDER BY r.fecha_reserva DESC, r.hora_inicio
                 """)
                 return cursor.fetchall()
         except Exception as e:

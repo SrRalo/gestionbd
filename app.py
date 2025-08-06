@@ -9,6 +9,7 @@ from vistas.login_view import LoginView
 from vistas.dashboard_view import DashboardView
 from vistas.reservas_view import ReservasView
 from vistas.pagos_view import PagosView
+from vistas.validacion_view import mostrar_vista_validacion
 from logica_negocio.auth_manager import AuthManager
 from capa_datos.database_connection import get_db_connection
 
@@ -108,25 +109,50 @@ def show_login():
         st.rerun()
 
 def show_authenticated_content():
-    """Mostrar el contenido correspondiente según la página actual"""
-    # Botón para volver al dashboard
-    if st.session_state.current_page != "dashboard":
-        if st.button("🏠 Volver al Dashboard"):
-            st.session_state.current_page = "dashboard"
-            st.rerun()
-        st.markdown("---")
+    """Muestra el contenido para usuarios autenticados"""
     
-    # Mostrar la página correspondiente
-    if st.session_state.current_page == "dashboard":
+    # Sidebar con navegación
+    with st.sidebar:
+        st.markdown('<h2 class="sidebar-header">📋 Menú Principal</h2>', unsafe_allow_html=True)
+        
+        # Mostrar información del usuario
+        if st.session_state.current_user:
+            username = st.session_state.current_user.get("username", "Usuario")
+            st.markdown(f'<div class="role-badge">👤 {username}</div>', unsafe_allow_html=True)
+            st.markdown(f'<div class="role-badge">🔑 {st.session_state.user_role}</div>', unsafe_allow_html=True)
+        
+        # Opciones de navegación
+        page = st.selectbox(
+            "Seleccione una opción:",
+            ["🏠 Dashboard", "📅 Reservas", "💰 Pagos", "📊 Reportes", "🔧 Validación", "🚪 Cerrar Sesión"],
+            index=0
+        )
+        
+        # Botón de cerrar sesión
+        if st.button("🚪 Cerrar Sesión", key="sidebar_logout_btn"):
+            st.session_state.authenticated = False
+            st.session_state.current_user = None
+            st.session_state.user_role = None
+            st.session_state.is_admin = False
+            st.rerun()
+    
+    # Mostrar página seleccionada
+    if page == "🏠 Dashboard":
         show_dashboard()
-    elif st.session_state.current_page == "reservas":
+    elif page == "📅 Reservas":
         show_reservas()
-    elif st.session_state.current_page == "pagos":
+    elif page == "💰 Pagos":
         show_pagos()
-    elif st.session_state.current_page == "reportes":
+    elif page == "📊 Reportes":
         show_reportes()
-    else:
-        show_dashboard()
+    elif page == "🔧 Validación":
+        show_validacion()
+    elif page == "🚪 Cerrar Sesión":
+        st.session_state.authenticated = False
+        st.session_state.current_user = None
+        st.session_state.user_role = None
+        st.session_state.is_admin = False
+        st.rerun()
 
 def show_dashboard():
     """Mostrar el dashboard usando la vista correspondiente"""
@@ -161,6 +187,10 @@ def show_reportes():
         from vistas.reportes_generales_view import ReportesGeneralesView
         reportes_view = ReportesGeneralesView()
         reportes_view.show()
+
+def show_validacion():
+    """Muestra la vista de validación y limpieza de datos"""
+    mostrar_vista_validacion()
 
 if __name__ == "__main__":
     main() 

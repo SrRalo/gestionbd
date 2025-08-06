@@ -93,7 +93,7 @@ class AuditoriaView:
             col1, col2, col3 = st.columns([1, 2, 1])
             
             with col1:
-                if st.button("⬅️ Anterior", disabled=st.session_state.get('pagina_auditoria', 1) <= 1):
+                if st.button("⬅️ Anterior", disabled=st.session_state.get('pagina_auditoria', 1) <= 1, key="auditoria_prev_btn"):
                     st.session_state.pagina_auditoria = max(1, st.session_state.get('pagina_auditoria', 1) - 1)
                     st.rerun()
             
@@ -102,7 +102,7 @@ class AuditoriaView:
                 st.markdown(f"**Página {pagina_actual} de {total_paginas}**")
             
             with col3:
-                if st.button("➡️ Siguiente", disabled=pagina_actual >= total_paginas):
+                if st.button("➡️ Siguiente", disabled=pagina_actual >= total_paginas, key="auditoria_next_btn"):
                     st.session_state.pagina_auditoria = min(total_paginas, pagina_actual + 1)
                     st.rerun()
             

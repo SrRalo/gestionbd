@@ -6,7 +6,7 @@ from datetime import datetime, date
 
 def crear_reserva_db(conn, cliente_id, cancha_id, fecha_reserva, hora_inicio, hora_fin, observaciones=None):
     """
-    Crea una nueva reserva usando la función crear_reserva de PostgreSQL.
+    Crea una nueva reserva usando el procedimiento proc_gestionar_reserva.
     
     Args:
         conn: Conexión a la base de datos
@@ -18,34 +18,46 @@ def crear_reserva_db(conn, cliente_id, cancha_id, fecha_reserva, hora_inicio, ho
         observaciones (str): Observaciones opcionales
     
     Returns:
-        int: ID de la reserva creada o None si hay error
+        bool: True si la reserva se creó correctamente, False en caso contrario
     """
     try:
-        with conn.cursor() as cur:
-            # Convertir objetos time a strings para PostgreSQL
-            hora_inicio_str = hora_inicio.strftime('%H:%M:%S') if hora_inicio else None
-            hora_fin_str = hora_fin.strftime('%H:%M:%S') if hora_fin else None
+        # Convertir objetos time a strings para PostgreSQL
+        hora_inicio_str = hora_inicio.strftime('%H:%M:%S') if hora_inicio else None
+        hora_fin_str = hora_fin.strftime('%H:%M:%S') if hora_fin else None
+        
+        # Llamar al procedimiento almacenado
+        success = call_procedure(conn, 'proc_gestionar_reserva', 
+                               ('CREATE', None, cliente_id, cancha_id, fecha_reserva, 
+                                hora_inicio_str, hora_fin_str, observaciones, 'pendiente'))
+        
+        if success:
+            # Obtener el ID de la reserva creada para auditoría
+            sql = """
+            SELECT id FROM reservas 
+            WHERE cliente_id = %s AND cancha_id = %s AND fecha_reserva = %s 
+            AND hora_inicio = %s AND hora_fin = %s
+            ORDER BY fecha_creacion DESC LIMIT 1
+            """
+            result = execute_query(conn, sql, (cliente_id, cancha_id, fecha_reserva, hora_inicio_str, hora_fin_str))
             
-            cur.callproc('crear_reserva', (cliente_id, cancha_id, fecha_reserva, hora_inicio_str, hora_fin_str, observaciones))
-            result = cur.fetchone()
-            reserva_id = result[0] if result else None
+            if result:
+                reserva_id = result[0][0]
+                # Registrar en auditoría
+                registrar_accion_auditoria(conn, 'reservas', 'INSERT', reserva_id, 
+                                         f'Reserva creada: Cliente {cliente_id}, Cancha {cancha_id}, Fecha {fecha_reserva}')
+            
             conn.commit()
+            st.success("✅ Reserva creada correctamente")
+            return True
+        else:
+            conn.rollback()
+            st.error("❌ Error al crear la reserva")
+            return False
             
-            # Registrar en auditoría manualmente
-            if reserva_id:
-                registrar_accion_auditoria(
-                    usuario_id=st.session_state.get('current_user', {}).get('id'),
-                    tipo_accion="INSERT",
-                    tabla="reservas",
-                    registro_id=reserva_id,
-                    detalles=f"Nueva reserva creada: Cliente {cliente_id}, Cancha {cancha_id}, Fecha {fecha_reserva}"
-                )
-            
-            return reserva_id
-    except psycopg2.Error as e:
-        st.error(f"Error al crear reserva: {e}")
+    except Exception as e:
         conn.rollback()
-        return None
+        st.error(f"Error al crear reserva: {e}")
+        return False
 
 def get_reservas_db(conn):
     """
@@ -101,74 +113,93 @@ def get_reserva_by_id_db(conn, reserva_id):
     result = execute_query_dict(conn, sql, (reserva_id,))
     return result[0] if result else None
 
-def update_reserva_db(conn, reserva_id, estado, observaciones):
+def actualizar_reserva_db(conn, reserva_id, cliente_id, cancha_id, fecha_reserva, hora_inicio, hora_fin, observaciones=None, estado='pendiente'):
     """
-    Actualiza el estado y observaciones de una reserva.
+    Actualiza una reserva existente usando el procedimiento proc_gestionar_reserva.
     
     Args:
         conn: Conexión a la base de datos
-        reserva_id (int): ID de la reserva
-        estado (str): Nuevo estado
-        observaciones (str): Nuevas observaciones
+        reserva_id (int): ID de la reserva a actualizar
+        cliente_id (int): ID del cliente
+        cancha_id (int): ID de la cancha
+        fecha_reserva (date): Fecha de la reserva
+        hora_inicio (time): Hora de inicio
+        hora_fin (time): Hora de fin
+        observaciones (str): Observaciones opcionales
+        estado (str): Estado de la reserva
     
     Returns:
-        bool: True si se actualizó correctamente, False en caso contrario
+        bool: True si la reserva se actualizó correctamente, False en caso contrario
     """
     try:
-        sql = """
-        UPDATE reservas 
-        SET estado = %s, observaciones = %s
-        WHERE id = %s
-        """
-        result = execute_query(conn, sql, (estado, observaciones, reserva_id), fetch=False)
+        # Convertir objetos time a strings para PostgreSQL
+        hora_inicio_str = hora_inicio.strftime('%H:%M:%S') if hora_inicio else None
+        hora_fin_str = hora_fin.strftime('%H:%M:%S') if hora_fin else None
         
-        # Registrar en auditoría manualmente
-        if result:
-            registrar_accion_auditoria(
-                usuario_id=st.session_state.get('current_user', {}).get('id'),
-                tipo_accion="UPDATE",
-                tabla="reservas",
-                registro_id=reserva_id,
-                detalles=f"Reserva actualizada: Estado {estado}, Observaciones: {observaciones}"
-            )
+        # Llamar al procedimiento almacenado
+        success = call_procedure(conn, 'proc_gestionar_reserva', 
+                               ('UPDATE', reserva_id, cliente_id, cancha_id, fecha_reserva, 
+                                hora_inicio_str, hora_fin_str, observaciones, estado))
         
-        return result is not None
+        if success:
+            # Registrar en auditoría
+            registrar_accion_auditoria(conn, 'reservas', 'UPDATE', reserva_id, 
+                                     f'Reserva actualizada: ID {reserva_id}, Cliente {cliente_id}, Cancha {cancha_id}')
+            
+            conn.commit()
+            st.success("✅ Reserva actualizada correctamente")
+            return True
+        else:
+            conn.rollback()
+            st.error("❌ Error al actualizar la reserva")
+            return False
+            
     except Exception as e:
+        conn.rollback()
         st.error(f"Error al actualizar reserva: {e}")
         return False
 
-def cancelar_reserva_db(conn, reserva_id, motivo_cancelacion):
+def cancelar_reserva_db(conn, reserva_id, cliente_id, cancha_id, fecha_reserva, hora_inicio, hora_fin):
     """
-    Cancela una reserva cambiando su estado a 'cancelada'.
+    Cancela una reserva usando el procedimiento proc_gestionar_reserva.
     
     Args:
         conn: Conexión a la base de datos
-        reserva_id (int): ID de la reserva
-        motivo_cancelacion (str): Motivo de la cancelación
+        reserva_id (int): ID de la reserva a cancelar
+        cliente_id (int): ID del cliente
+        cancha_id (int): ID de la cancha
+        fecha_reserva (date): Fecha de la reserva
+        hora_inicio (time): Hora de inicio
+        hora_fin (time): Hora de fin
     
     Returns:
-        bool: True si se canceló correctamente, False en caso contrario
+        bool: True si la reserva se canceló correctamente, False en caso contrario
     """
     try:
-        sql = """
-        UPDATE reservas 
-        SET estado = 'cancelada', observaciones = %s
-        WHERE id = %s
-        """
-        result = execute_query(conn, sql, (motivo_cancelacion, reserva_id), fetch=False)
+        # Convertir objetos time a strings para PostgreSQL
+        hora_inicio_str = hora_inicio.strftime('%H:%M:%S') if hora_inicio else None
+        hora_fin_str = hora_fin.strftime('%H:%M:%S') if hora_fin else None
         
-        # Registrar en auditoría manualmente
-        if result:
-            registrar_accion_auditoria(
-                usuario_id=st.session_state.get('current_user', {}).get('id'),
-                tipo_accion="UPDATE",
-                tabla="reservas",
-                registro_id=reserva_id,
-                detalles=f"Reserva cancelada: {motivo_cancelacion}"
-            )
+        # Llamar al procedimiento almacenado
+        success = call_procedure(conn, 'proc_gestionar_reserva', 
+                               ('CANCEL', reserva_id, cliente_id, cancha_id, fecha_reserva, 
+                                hora_inicio_str, hora_fin_str))
         
-        return result is not None
+        if success:
+            # Registrar en auditoría
+            registrar_accion_auditoria(conn, 'reservas', 'UPDATE', reserva_id, 
+                                     f'Reserva cancelada: ID {reserva_id}')
+            
+            conn.commit()
+            st.success("✅ Reserva cancelada correctamente")
+            return True
+        else:
+            conn.rollback()
+            st.error("❌ Error al cancelar la reserva")
+            return False
+            
     except Exception as e:
+        conn.rollback()
         st.error(f"Error al cancelar reserva: {e}")
         return False
 
@@ -312,20 +343,48 @@ def verificar_disponibilidad_db(conn, cancha_id, fecha, hora_inicio, hora_fin, r
         fecha (date): Fecha de la reserva
         hora_inicio (time): Hora de inicio
         hora_fin (time): Hora de fin
-        reserva_id_excluir (int): ID de reserva a excluir (para actualizaciones)
+        reserva_id_excluir (int): ID de reserva a excluir (para actualizaciones) - NO USADO
     
     Returns:
         bool: True si está disponible, False si no
     """
     try:
-        with conn.cursor() as cur:
-            # Convertir objetos time a strings para PostgreSQL
-            hora_inicio_str = hora_inicio.strftime('%H:%M:%S') if hora_inicio else None
-            hora_fin_str = hora_fin.strftime('%H:%M:%S') if hora_fin else None
+        # Convertir objetos time a strings para PostgreSQL
+        hora_inicio_str = hora_inicio.strftime('%H:%M:%S') if hora_inicio else None
+        hora_fin_str = hora_fin.strftime('%H:%M:%S') if hora_fin else None
+        
+        # Intentar usar la función PostgreSQL primero
+        try:
+            result = call_function(conn, 'verificar_disponibilidad_cancha', 
+                                 (cancha_id, fecha, hora_inicio_str, hora_fin_str))
             
-            cur.callproc('verificar_disponibilidad_cancha', (cancha_id, fecha, hora_inicio_str, hora_fin_str, reserva_id_excluir))
-            result = cur.fetchone()
-            return result[0] if result else False
-    except psycopg2.Error as e:
+            if result is not None:
+                return result[0] if isinstance(result, tuple) else result
+                
+        except Exception as func_error:
+            st.warning(f"⚠️ No se pudo usar la función PostgreSQL: {func_error}")
+        
+        # Fallback: usar consulta SQL directa
+        sql = """
+        SELECT NOT EXISTS (
+            SELECT 1 FROM reservas 
+            WHERE cancha_id = %s 
+            AND fecha_reserva = %s
+            AND estado IN ('confirmada', 'pendiente')
+            AND (
+                (hora_inicio < %s AND hora_fin > %s) OR
+                (hora_inicio >= %s AND hora_inicio < %s)
+            )
+        ) as disponible
+        """
+        
+        result = execute_query(conn, sql, (cancha_id, fecha, hora_fin_str, hora_inicio_str, hora_inicio_str, hora_fin_str))
+        
+        if result and len(result) > 0:
+            return result[0][0] if isinstance(result[0], tuple) else result[0]
+        
+        return False
+        
+    except Exception as e:
         st.error(f"Error al verificar disponibilidad: {e}")
         return False 

@@ -734,7 +734,7 @@ FROM reservas r
 JOIN clientes c ON r.cliente_id = c.id
 JOIN canchas ca ON r.cancha_id = ca.id
 LEFT JOIN pagos p ON r.id = p.reserva_id AND p.estado = 'Completado'
-WHERE r.estado IN ('Confirmada', 'Pendiente')
+WHERE r.estado IN ('confirmada', 'pendiente', 'Confirmada', 'Pendiente')
 GROUP BY r.id, r.fecha_reserva, r.hora_inicio, r.hora_fin, r.duracion, r.estado, r.observaciones,
          c.id, c.nombre, c.apellido, c.email, c.telefono,
          ca.id, ca.nombre, ca.tipo_deporte, ca.precio_hora, r.fecha_creacion, r.fecha_actualizacion

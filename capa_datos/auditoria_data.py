@@ -1,54 +1,41 @@
 """
 Capa de datos para la tabla auditoria
 """
-from capa_datos.data_access import execute_query_dict, execute_query
-from capa_datos.database_connection import get_db_connection
+import psycopg2
 import streamlit as st
+from capa_datos.data_access import execute_query, execute_query_dict, call_procedure
+from capa_datos.database_connection import get_db_connection
 
-def registrar_accion_auditoria(usuario_id, tipo_accion, tabla, registro_id, detalles, resultado="SUCCESS"):
+def registrar_accion_auditoria(usuario_id, tipo_accion, tabla, registro_id, detalles, ip_address='127.0.0.1'):
     """
-    Registra manualmente una acción en la tabla auditoría
+    Registra una acción en la tabla de auditoría usando el procedimiento almacenado.
     
     Args:
-        usuario_id (int): ID del usuario que realiza la acción
-        tipo_accion (str): Tipo de acción (INSERT, UPDATE, DELETE, etc.)
+        usuario_id (int): ID del usuario que realizó la acción
+        tipo_accion (str): Tipo de acción (INSERT, UPDATE, DELETE, SELECT, LOGIN, LOGOUT, ERROR)
         tabla (str): Nombre de la tabla afectada
         registro_id (int): ID del registro afectado
-        detalles (str): Descripción de la acción
-        resultado (str): Resultado de la acción (SUCCESS, ERROR, etc.)
+        detalles (str): Detalles de la acción
+        ip_address (str): Dirección IP del usuario
     
     Returns:
         bool: True si se registró correctamente, False en caso contrario
     """
     try:
-        conn = get_db_connection()
-        if not conn:
-            return False
-            
-        query = """
-        INSERT INTO auditoria (
-            usuario_id,
-            tipo_accion,
-            tabla,
-            registro_id,
-            detalles,
-            resultado,
-            ip_address,
-            fecha_hora
-        ) VALUES (
-            %s, %s, %s, %s, %s, %s, %s, CURRENT_TIMESTAMP
+        # Llamar al procedimiento almacenado
+        success = call_procedure(
+            st.session_state.get('db_connection'),
+            'proc_registrar_auditoria_manual',
+            (usuario_id, tipo_accion, tabla, registro_id, detalles, ip_address)
         )
-        """
         
-        # IP address simulado (en producción se obtendría del request)
-        ip_address = "127.0.0.1"
+        if not success:
+            st.warning("⚠️ No se pudo registrar la acción en auditoría")
         
-        result = execute_query(conn, query, (usuario_id, tipo_accion, tabla, registro_id, detalles, resultado, ip_address), fetch=False)
-        conn.close()
+        return success
         
-        return result is not None
     except Exception as e:
-        st.error(f"Error al registrar acción en auditoría: {e}")
+        st.error(f"Error al registrar auditoría: {e}")
         return False
 
 def get_auditoria_db():

@@ -71,7 +71,7 @@ class DashboardView:
     def show_user_info(self):
         """Mostrar información del usuario logueado"""
         if st.session_state.current_user:
-            username = st.session_state.current_user
+            username = st.session_state.current_user.get("username", "Usuario")
             role_display = self.get_role_display_name(st.session_state.user_role)
             
             col1, col2 = st.columns([3, 1])
@@ -95,29 +95,29 @@ class DashboardView:
             col1, col2, col3 = st.columns(3)
             
             with col1:
-                if st.button("📅 Gestión de Reservas", use_container_width=True):
+                if st.button("📅 Gestión de Reservas", use_container_width=True, key="nav_reservas_btn"):
                     st.session_state.current_page = "reservas"
                     st.rerun()
             
             with col2:
-                if st.button("💰 Gestión de Pagos", use_container_width=True):
+                if st.button("💰 Gestión de Pagos", use_container_width=True, key="nav_pagos_btn"):
                     st.session_state.current_page = "pagos"
                     st.rerun()
             
             with col3:
-                if st.button("📊 Reportes", use_container_width=True):
+                if st.button("📊 Reportes", use_container_width=True, key="nav_reportes_btn"):
                     st.session_state.current_page = "reportes"
                     st.rerun()
         else:
             col1, col2 = st.columns(2)
             
             with col1:
-                if st.button("📅 Gestión de Reservas", use_container_width=True):
+                if st.button("📅 Gestión de Reservas", use_container_width=True, key="nav_reservas_limited_btn"):
                     st.session_state.current_page = "reservas"
                     st.rerun()
             
             with col2:
-                if st.button("📊 Reportes", use_container_width=True):
+                if st.button("📊 Reportes", use_container_width=True, key="nav_reportes_limited_btn"):
                     st.session_state.current_page = "reportes"
                     st.rerun()
         
@@ -165,7 +165,7 @@ class DashboardView:
                 col1, col2, col3 = st.columns([1, 2, 1])
                 
                 with col1:
-                    if st.button("⬅️ Anterior", disabled=st.session_state.get('pagina_canchas', 1) <= 1):
+                    if st.button("⬅️ Anterior", disabled=st.session_state.get('pagina_canchas', 1) <= 1, key="dashboard_prev_btn"):
                         st.session_state.pagina_canchas = max(1, st.session_state.get('pagina_canchas', 1) - 1)
                         st.rerun()
                 
@@ -174,7 +174,7 @@ class DashboardView:
                     st.markdown(f"**Página {pagina_actual} de {total_paginas}**")
                 
                 with col3:
-                    if st.button("➡️ Siguiente", disabled=pagina_actual >= total_paginas):
+                    if st.button("➡️ Siguiente", disabled=pagina_actual >= total_paginas, key="dashboard_next_btn"):
                         st.session_state.pagina_canchas = min(total_paginas, pagina_actual + 1)
                         st.rerun()
                 
@@ -202,7 +202,7 @@ class DashboardView:
     
     def show_logout_button(self):
         """Mostrar botón de logout"""
-        if st.button("🚪 Cerrar Sesión"):
+        if st.button("🚪 Cerrar Sesión", key="dashboard_logout_btn"):
             st.session_state.authenticated = False
             st.session_state.current_user = None
             st.session_state.user_role = None

@@ -152,13 +152,19 @@ def call_procedure(conn, procedure_name, params=None):
             reset_transaction(conn)
         
         with conn.cursor() as cur:
+            # Construir la llamada CALL con parámetros
             if params:
-                cur.callproc(procedure_name, params)
+                # Crear placeholders para los parámetros
+                placeholders = ', '.join(['%s'] * len(params))
+                call_sql = f"CALL {procedure_name}({placeholders})"
+                cur.execute(call_sql, params)
             else:
-                cur.callproc(procedure_name)
-            conn.commit()
+                call_sql = f"CALL {procedure_name}()"
+                cur.execute(call_sql)
+            
+            # No hacer commit aquí, dejar que la función llamadora maneje la transacción
             return True
     except psycopg2.Error as e:
         st.error(f"Error al llamar procedimiento {procedure_name}: {e}")
-        conn.rollback()
+        # No hacer rollback aquí, dejar que la función llamadora maneje la transacción
         return False 

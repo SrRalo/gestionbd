@@ -1,7 +1,36 @@
 import psycopg2
 import streamlit as st
-from capa_datos.data_access import execute_query, execute_query_dict
+from capa_datos.data_access import execute_query, execute_query_dict, call_procedure
 from datetime import datetime, date
+
+def generar_estadisticas_procedimiento_db(conn, fecha_inicio=None, fecha_fin=None, tipo_reporte='mensual'):
+    """
+    Genera estadísticas usando el procedimiento almacenado proc_generar_estadisticas.
+    
+    Args:
+        conn: Conexión a la base de datos
+        fecha_inicio (date): Fecha de inicio para el reporte
+        fecha_fin (date): Fecha de fin para el reporte
+        tipo_reporte (str): Tipo de reporte ('mensual', 'semanal', 'diario')
+    
+    Returns:
+        bool: True si el reporte se generó correctamente, False en caso contrario
+    """
+    try:
+        # Llamar al procedimiento almacenado
+        success = call_procedure(conn, 'proc_generar_estadisticas', 
+                               (fecha_inicio, fecha_fin, tipo_reporte))
+        
+        if success:
+            st.success(f"✅ Reporte de estadísticas {tipo_reporte} generado correctamente")
+            return True
+        else:
+            st.error("❌ Error al generar el reporte de estadísticas")
+            return False
+            
+    except Exception as e:
+        st.error(f"Error al generar estadísticas: {e}")
+        return False
 
 def get_vista_reservas_completas_db(conn, fecha_inicio=None, fecha_fin=None, cliente_id=None, cancha_id=None):
     """

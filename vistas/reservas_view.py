@@ -267,7 +267,7 @@ class ReservasView:
                 col1, col2, col3 = st.columns([1, 2, 1])
                 
                 with col1:
-                    if st.button("⬅️ Anterior", disabled=st.session_state.get('pagina_reservas', 1) <= 1):
+                    if st.button("⬅️ Anterior", disabled=st.session_state.get('pagina_reservas', 1) <= 1, key="reservas_prev_btn"):
                         st.session_state.pagina_reservas = max(1, st.session_state.get('pagina_reservas', 1) - 1)
                         st.rerun()
                 
@@ -276,7 +276,7 @@ class ReservasView:
                     st.markdown(f"**Página {pagina_actual} de {total_paginas}**")
                 
                 with col3:
-                    if st.button("➡️ Siguiente", disabled=pagina_actual >= total_paginas):
+                    if st.button("➡️ Siguiente", disabled=pagina_actual >= total_paginas, key="reservas_next_btn"):
                         st.session_state.pagina_reservas = min(total_paginas, pagina_actual + 1)
                         st.rerun()
                 
@@ -314,25 +314,30 @@ class ReservasView:
         
         col1, col2 = st.columns(2)
         
+        # Búsqueda por fecha
         with col1:
-            # Búsqueda por fecha
             fecha_busqueda = st.date_input(
                 "Buscar por fecha",
                 value=date.today()
             )
             
-            if st.button("🔍 Buscar por Fecha"):
-                self.mostrar_reservas_por_fecha(fecha_busqueda)
+            if st.button("🔍 Buscar por Fecha", key="buscar_fecha_btn"):
+                if fecha_busqueda:
+                    self.reservas_filtradas = self.reservas_logic.obtener_reservas_por_fecha(fecha_busqueda)
+                    st.success(f"✅ Se encontraron {len(self.reservas_filtradas)} reservas para la fecha {fecha_busqueda}")
+                else:
+                    st.warning("⚠️ Por favor selecciona una fecha para buscar")
         
+        # Búsqueda por estado
         with col2:
-            # Búsqueda por estado
-            estado_busqueda = st.selectbox(
-                "Buscar por estado",
-                options=["", "pendiente", "confirmada", "cancelada", "completada"]
-            )
-            
-            if st.button("🔍 Buscar por Estado"):
-                self.mostrar_reservas_por_estado(estado_busqueda)
+            estado_busqueda = st.selectbox("Estado:", ["Todos", "pendiente", "confirmada", "cancelada", "completada"], key="estado_busqueda")
+            if st.button("🔍 Buscar por Estado", key="buscar_estado_btn"):
+                if estado_busqueda != "Todos":
+                    self.reservas_filtradas = self.reservas_logic.obtener_reservas_por_estado(estado_busqueda)
+                    st.success(f"✅ Se encontraron {len(self.reservas_filtradas)} reservas con estado '{estado_busqueda}'")
+                else:
+                    self.reservas_filtradas = self.reservas_logic.obtener_todas_las_reservas()
+                    st.success("✅ Mostrando todas las reservas")
     
     def mostrar_reservas_por_fecha(self, fecha):
         """Mostrar reservas por fecha específica"""

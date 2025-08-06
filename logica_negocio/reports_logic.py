@@ -5,7 +5,8 @@ from capa_datos.reports_data import (
     get_estadisticas_generales_db, get_estadisticas_mensuales_db,
     get_estadisticas_semanales_db, get_top_clientes_db, get_top_canchas_db,
     get_estadisticas_horarios_db, get_estadisticas_dias_semana_db,
-    get_canchas_mas_usadas_db, get_canchas_mas_recaudan_db
+    get_canchas_mas_usadas_db, get_canchas_mas_recaudan_db,
+    generar_estadisticas_procedimiento_db
 )
 from logica_negocio.clientes_logic import clientes_logic
 from logica_negocio.canchas_logic import canchas_logic
@@ -14,7 +15,7 @@ from logica_negocio.pagos_logic import pagos_logic
 
 class ReportsLogic:
     """
-    Lógica de negocio para reportes y estadísticas.
+    Lógica de negocio para la generación de reportes.
     """
     
     def __init__(self):
@@ -489,6 +490,24 @@ class ReportsLogic:
         except Exception as e:
             st.error(f"Error al generar reporte completo del sistema: {e}")
             return {}
+
+    def generar_estadisticas_procedimiento(self, fecha_inicio=None, fecha_fin=None, tipo_reporte='mensual'):
+        """
+        Genera estadísticas usando el procedimiento almacenado.
+        
+        Args:
+            fecha_inicio (date): Fecha de inicio para el reporte
+            fecha_fin (date): Fecha de fin para el reporte
+            tipo_reporte (str): Tipo de reporte ('mensual', 'semanal', 'diario')
+        
+        Returns:
+            bool: True si el reporte se generó correctamente, False en caso contrario
+        """
+        try:
+            return generar_estadisticas_procedimiento_db(self.conn, fecha_inicio, fecha_fin, tipo_reporte)
+        except Exception as e:
+            st.error(f"Error al generar estadísticas: {e}")
+            return False
 
 # Instancia global de la lógica de reportes
 reports_logic = ReportsLogic() 

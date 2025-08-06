@@ -1,13 +1,13 @@
 import streamlit as st
-from datetime import datetime, date, time, timedelta
+from datetime import datetime, date, timedelta
 from capa_datos.reservas_data import (
-    crear_reserva_db, get_reservas_db, get_reserva_by_id_db, update_reserva_db,
-    cancelar_reserva_db, get_reservas_por_fecha_db, get_reservas_por_cliente_db,
-    get_reservas_por_cancha_db, get_reservas_activas_db, limpiar_reservas_antiguas_db,
+    crear_reserva_db, get_reservas_db, get_reserva_by_id_db,
+    actualizar_reserva_db, cancelar_reserva_db, get_reservas_por_fecha_db,
+    get_reservas_por_cliente_db, get_reservas_por_cancha_db, get_reservas_activas_db,
     verificar_disponibilidad_db
 )
-from logica_negocio.clientes_logic import ClientesLogic
-from logica_negocio.canchas_logic import CanchasLogic
+from capa_datos.canchas_data import get_cancha_by_id_db
+from capa_datos.clientes_data import get_cliente_by_id_db
 
 class ReservasLogic:
     """
@@ -17,12 +17,10 @@ class ReservasLogic:
     def __init__(self):
         self.conn = st.session_state.get('db_connection')
         self.estados_reserva = ['pendiente', 'confirmada', 'cancelada', 'completada']
-        self.hora_minima = time(6, 0)  # 6:00 AM
-        self.hora_maxima = time(23, 0)  # 11:00 PM
+        self.hora_minima = datetime.strptime('06:00', '%H:%M').time()  # 6:00 AM
+        self.hora_maxima = datetime.strptime('23:00', '%H:%M').time()  # 11:00 PM
         self.duracion_minima = 30  # minutos
         self.duracion_maxima = 240  # minutos (4 horas)
-        self.clientes_logic = ClientesLogic()
-        self.canchas_logic = CanchasLogic()
     
     def validar_fecha_reserva(self, fecha_reserva):
         """
@@ -96,7 +94,7 @@ class ReservasLogic:
     
     def crear_reserva(self, cliente_id, cancha_id, fecha_reserva, hora_inicio, hora_fin, observaciones=None):
         """
-        Crea una nueva reserva con validaciones completas.
+        Crea una nueva reserva usando el procedimiento almacenado.
         
         Args:
             cliente_id (int): ID del cliente
@@ -107,71 +105,30 @@ class ReservasLogic:
             observaciones (str): Observaciones opcionales
         
         Returns:
-            int: ID de la reserva creada o None si hay error
+            bool: True si se creó correctamente, False en caso contrario
         """
-        # Validaciones básicas
-        if not cliente_id:
-            st.error("Debe seleccionar un cliente.")
-            return None
-        
-        if not cancha_id:
-            st.error("Debe seleccionar una cancha.")
-            return None
-        
-        if not self.validar_fecha_reserva(fecha_reserva):
-            st.error("La fecha de reserva no es válida.")
-            return None
-        
-        if not self.validar_horario(hora_inicio, hora_fin):
-            st.error("El horario no es válido.")
-            return None
-        
-        # Verificar que el cliente existe y está activo
-        cliente = self.clientes_logic.obtener_cliente_por_id(cliente_id)
-        if not cliente:
-            st.error("El cliente seleccionado no existe.")
-            return None
-        
-        if cliente.get('estado', '').lower() != 'activo':
-            st.error("El cliente seleccionado no está activo.")
-            return None
-        
-        # Verificar que la cancha existe y está activa
-        cancha = self.canchas_logic.obtener_cancha_por_id(cancha_id)
-        if not cancha:
-            st.error("La cancha seleccionada no existe.")
-            return None
-        
-        # Verificar que la cancha esté activa (no inactiva)
-        if cancha.get('estado', '').lower() == 'inactiva':
-            st.error("La cancha seleccionada no está activa.")
-            return None
-        
-        # Verificar disponibilidad
-        if not self.verificar_disponibilidad(cancha_id, fecha_reserva, hora_inicio, hora_fin):
-            st.error("La cancha no está disponible en el horario seleccionado.")
-            return None
-        
-        # Limpiar observaciones
-        observaciones = observaciones.strip() if observaciones else None
-        
-        # Crear reserva
         try:
-            reserva_id = crear_reserva_db(
-                self.conn, cliente_id, cancha_id, fecha_reserva, 
-                hora_inicio, hora_fin, observaciones
-            )
+            # Validar que la reserva no esté en el pasado
+            if fecha_reserva < date.today():
+                st.error("❌ No se pueden crear reservas en fechas pasadas")
+                return False
             
-            if reserva_id:
-                st.success(f"Reserva creada exitosamente con ID: {reserva_id}")
-                return reserva_id
-            else:
-                st.error("Error al crear la reserva.")
-                return None
-                
+            # Validar que la hora de fin sea posterior a la de inicio
+            if hora_fin <= hora_inicio:
+                st.error("❌ La hora de fin debe ser posterior a la hora de inicio")
+                return False
+            
+            # Verificar disponibilidad
+            if not verificar_disponibilidad_db(self.conn, cancha_id, fecha_reserva, hora_inicio, hora_fin):
+                st.error("❌ La cancha no está disponible en el horario especificado")
+                return False
+            
+            # Crear la reserva usando el procedimiento almacenado
+            return crear_reserva_db(self.conn, cliente_id, cancha_id, fecha_reserva, hora_inicio, hora_fin, observaciones)
+            
         except Exception as e:
-            st.error(f"Error inesperado al crear reserva: {e}")
-            return None
+            st.error(f"Error al crear reserva: {e}")
+            return False
     
     def obtener_reservas(self, solo_activas=False):
         """
@@ -208,90 +165,79 @@ class ReservasLogic:
             st.error(f"Error al obtener reserva: {e}")
             return None
     
-    def actualizar_reserva(self, reserva_id, estado, observaciones):
+    def actualizar_reserva(self, reserva_id, cliente_id, cancha_id, fecha_reserva, hora_inicio, hora_fin, observaciones=None, estado='pendiente'):
         """
-        Actualiza el estado y observaciones de una reserva.
+        Actualiza una reserva existente usando el procedimiento almacenado.
         
         Args:
             reserva_id (int): ID de la reserva a actualizar
-            estado (str): Nuevo estado
-            observaciones (str): Nuevas observaciones
+            cliente_id (int): ID del cliente
+            cancha_id (int): ID de la cancha
+            fecha_reserva (date): Fecha de la reserva
+            hora_inicio (time): Hora de inicio
+            hora_fin (time): Hora de fin
+            observaciones (str): Observaciones opcionales
+            estado (str): Estado de la reserva
         
         Returns:
-            bool: True si la actualización fue exitosa
+            bool: True si se actualizó correctamente, False en caso contrario
         """
-        # Validar estado
-        if not self.validar_estado_reserva(estado):
-            st.error(f"El estado debe ser uno de: {', '.join(self.estados_reserva)}")
-            return False
-        
-        # Verificar que la reserva existe
-        reserva = self.obtener_reserva_por_id(reserva_id)
-        if not reserva:
-            st.error("Reserva no encontrada.")
-            return False
-        
-        # Limpiar observaciones
-        observaciones = observaciones.strip() if observaciones else None
-        
-        # Actualizar reserva
         try:
-            success = update_reserva_db(self.conn, reserva_id, estado, observaciones)
-            
-            if success:
-                st.success(f"Reserva actualizada exitosamente.")
-                return True
-            else:
-                st.error("Error al actualizar la reserva.")
+            # Validar que la reserva existe
+            reserva_actual = get_reserva_by_id_db(self.conn, reserva_id)
+            if not reserva_actual:
+                st.error("❌ La reserva especificada no existe")
                 return False
-                
+            
+            # Validar que la hora de fin sea posterior a la de inicio
+            if hora_fin <= hora_inicio:
+                st.error("❌ La hora de fin debe ser posterior a la hora de inicio")
+                return False
+            
+            # Verificar disponibilidad (excluyendo la reserva actual)
+            if not verificar_disponibilidad_db(self.conn, cancha_id, fecha_reserva, hora_inicio, hora_fin, reserva_id):
+                st.error("❌ La cancha no está disponible en el horario especificado")
+                return False
+            
+            # Actualizar la reserva usando el procedimiento almacenado
+            return actualizar_reserva_db(self.conn, reserva_id, cliente_id, cancha_id, fecha_reserva, hora_inicio, hora_fin, observaciones, estado)
+            
         except Exception as e:
-            st.error(f"Error inesperado al actualizar reserva: {e}")
+            st.error(f"Error al actualizar reserva: {e}")
             return False
     
-    def cancelar_reserva(self, reserva_id, motivo_cancelacion):
+    def cancelar_reserva(self, reserva_id, cliente_id, cancha_id, fecha_reserva, hora_inicio, hora_fin):
         """
-        Cancela una reserva.
+        Cancela una reserva usando el procedimiento almacenado.
         
         Args:
             reserva_id (int): ID de la reserva a cancelar
-            motivo_cancelacion (str): Motivo de la cancelación
+            cliente_id (int): ID del cliente
+            cancha_id (int): ID de la cancha
+            fecha_reserva (date): Fecha de la reserva
+            hora_inicio (time): Hora de inicio
+            hora_fin (time): Hora de fin
         
         Returns:
-            bool: True si la cancelación fue exitosa
+            bool: True si se canceló correctamente, False en caso contrario
         """
-        # Verificar que la reserva existe
-        reserva = self.obtener_reserva_por_id(reserva_id)
-        if not reserva:
-            st.error("Reserva no encontrada.")
-            return False
-        
-        # Verificar que la reserva no esté ya cancelada
-        if reserva['estado'] == 'cancelada':
-            st.error("La reserva ya está cancelada.")
-            return False
-        
-        # Verificar que la reserva no esté completada
-        if reserva['estado'] == 'completada':
-            st.error("No se puede cancelar una reserva completada.")
-            return False
-        
-        # Limpiar motivo de cancelación
-        motivo_cancelacion = motivo_cancelacion.strip() if motivo_cancelacion else "Sin motivo especificado"
-        
-        # Cancelar reserva
         try:
-            success = cancelar_reserva_db(self.conn, reserva_id, motivo_cancelacion)
-            
-            if success:
-                st.success(f"Reserva cancelada exitosamente.")
-                return True
-            else:
-                st.error("Error al cancelar la reserva.")
+            # Validar que la reserva existe
+            reserva = get_reserva_by_id_db(self.conn, reserva_id)
+            if not reserva:
+                st.error("❌ La reserva especificada no existe")
                 return False
-                
+            
+            # Validar que la reserva no esté ya cancelada
+            if reserva['estado'] == 'cancelada':
+                st.warning("⚠️ La reserva ya está cancelada")
+                return True
+            
+            # Cancelar la reserva usando el procedimiento almacenado
+            return cancelar_reserva_db(self.conn, reserva_id, cliente_id, cancha_id, fecha_reserva, hora_inicio, hora_fin)
+            
         except Exception as e:
-            st.error(f"Error inesperado al cancelar reserva: {e}")
+            st.error(f"Error al cancelar reserva: {e}")
             return False
     
     def obtener_reservas_por_fecha(self, fecha):
@@ -342,6 +288,37 @@ class ReservasLogic:
             st.error(f"Error al obtener reservas por cancha: {e}")
             return []
     
+    def obtener_reservas_por_estado(self, estado):
+        """
+        Obtiene todas las reservas de un estado específico.
+        
+        Args:
+            estado (str): Estado de las reservas a filtrar
+        
+        Returns:
+            list: Lista de reservas del estado especificado
+        """
+        try:
+            # Obtener todas las reservas y filtrar por estado
+            reservas = get_reservas_db(self.conn)
+            return [r for r in reservas if r['estado'].lower() == estado.lower()]
+        except Exception as e:
+            st.error(f"Error al obtener reservas por estado: {e}")
+            return []
+    
+    def obtener_todas_las_reservas(self):
+        """
+        Obtiene todas las reservas sin filtros.
+        
+        Returns:
+            list: Lista de todas las reservas
+        """
+        try:
+            return get_reservas_db(self.conn)
+        except Exception as e:
+            st.error(f"Error al obtener todas las reservas: {e}")
+            return []
+    
     def verificar_disponibilidad(self, cancha_id, fecha, hora_inicio, hora_fin, reserva_id_excluir=None):
         """
         Verifica si una cancha está disponible en un horario específico.
@@ -373,15 +350,11 @@ class ReservasLogic:
             bool: True si el procedimiento se ejecutó correctamente
         """
         try:
-            success = limpiar_reservas_antiguas_db(self.conn, fecha_corte)
-            
-            if success:
-                st.success(f"Reservas anteriores a {fecha_corte} eliminadas exitosamente.")
-                return True
-            else:
-                st.error("Error al limpiar reservas antiguas.")
-                return False
-                
+            # Este procedimiento no está definido en capa_datos.reservas_data,
+            # por lo que se asume que se ejecuta directamente o se maneja en capa_datos.
+            # Si se necesita una lógica de limpieza más compleja, se debe implementar aquí.
+            st.warning("La limpieza de reservas antiguas no está implementada en capa_datos.")
+            return False
         except Exception as e:
             st.error(f"Error inesperado al limpiar reservas antiguas: {e}")
             return False
@@ -451,9 +424,9 @@ class ReservasLogic:
             hora_actual = self.hora_minima
             
             while hora_actual < self.hora_maxima:
-                hora_fin = time(hora_actual.hour, hora_actual.minute + 30)
+                hora_fin = datetime.strptime(f"{hora_actual.hour}:{hora_actual.minute + 30}", '%H:%M').time()
                 if hora_fin.minute >= 60:
-                    hora_fin = time(hora_actual.hour + 1, hora_fin.minute - 60)
+                    hora_fin = datetime.strptime(f"{hora_actual.hour + 1}:{hora_fin.minute - 60}", '%H:%M').time()
                 
                 # Verificar si este horario está disponible
                 disponible = True
@@ -615,8 +588,13 @@ class ReservasLogic:
         try:
             return self.actualizar_reserva(
                 reserva_id=reserva_id,
-                estado=datos_actualizados['estado'],
-                observaciones=datos_actualizados.get('observaciones', '')
+                cliente_id=datos_actualizados['cliente_id'],
+                cancha_id=datos_actualizados['cancha_id'],
+                fecha_reserva=datos_actualizados['fecha_reserva'],
+                hora_inicio=datos_actualizados['hora_inicio'],
+                hora_fin=datos_actualizados['hora_fin'],
+                observaciones=datos_actualizados.get('observaciones', ''),
+                estado=datos_actualizados.get('estado', 'pendiente')
             )
         except Exception as e:
             st.error(f"Error al actualizar reserva: {e}")
@@ -625,7 +603,21 @@ class ReservasLogic:
     def cancelar_reserva_completa(self, reserva_id, motivo_cancelacion):
         """Cancelar reserva con motivo"""
         try:
-            return self.cancelar_reserva(reserva_id, motivo_cancelacion)
+            # Para cancelar, necesitamos el cliente_id, cancha_id, fecha_reserva, hora_inicio, hora_fin
+            # Esto requiere obtener la reserva actual para extraer estos datos.
+            reserva_actual = self.obtener_reserva_por_id(reserva_id)
+            if not reserva_actual:
+                st.error("❌ La reserva especificada no existe")
+                return {'success': False, 'message': "Reserva no encontrada"}
+
+            return self.cancelar_reserva(
+                reserva_id=reserva_id,
+                cliente_id=reserva_actual['cliente_id'],
+                cancha_id=reserva_actual['cancha_id'],
+                fecha_reserva=reserva_actual['fecha_reserva'],
+                hora_inicio=reserva_actual['hora_inicio'],
+                hora_fin=reserva_actual['hora_fin']
+            )
         except Exception as e:
             st.error(f"Error al cancelar reserva: {e}")
             return {'success': False, 'message': str(e)}
