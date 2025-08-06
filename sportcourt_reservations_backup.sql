@@ -302,42 +302,27 @@ DECLARE
     v_reserva_id INTEGER;
     v_duracion DECIMAL(10,2);
     v_disponible BOOLEAN;
-    v_cliente_existe BOOLEAN;
-    v_cancha_existe BOOLEAN;
-    v_reserva_existe BOOLEAN;
 BEGIN
     -- Validar parámetros de entrada
     IF p_accion IS NULL OR p_accion NOT IN ('CREATE', 'UPDATE', 'CANCEL') THEN
         RAISE EXCEPTION 'Acción no válida. Debe ser CREATE, UPDATE o CANCEL';
     END IF;
     
-    -- Verificar que el cliente existe
-    SELECT EXISTS(SELECT 1 FROM clientes WHERE id = p_cliente_id) INTO v_cliente_existe;
-    IF NOT v_cliente_existe THEN
-        RAISE EXCEPTION 'El cliente con ID % no existe', p_cliente_id;
-    END IF;
-    
-    -- Verificar que la cancha existe
-    SELECT EXISTS(SELECT 1 FROM canchas WHERE id = p_cancha_id) INTO v_cancha_existe;
-    IF NOT v_cancha_existe THEN
-        RAISE EXCEPTION 'La cancha con ID % no existe', p_cancha_id;
-    END IF;
-    
-    -- Calcular duración
-    v_duracion := EXTRACT(EPOCH FROM (p_hora_fin - p_hora_inicio)) / 3600;
-    
-    -- Validar duración
-    IF v_duracion <= 0 THEN
-        RAISE EXCEPTION 'La duración debe ser mayor a 0 horas';
-    END IF;
-    
-    -- Validar fecha
-    IF p_fecha_reserva < CURRENT_DATE THEN
-        RAISE EXCEPTION 'No se pueden crear reservas en fechas pasadas';
-    END IF;
-    
     CASE p_accion
         WHEN 'CREATE' THEN
+            -- Calcular duración
+            v_duracion := EXTRACT(EPOCH FROM (p_hora_fin - p_hora_inicio)) / 3600;
+            
+            -- Validar duración
+            IF v_duracion <= 0 THEN
+                RAISE EXCEPTION 'La duración debe ser mayor a 0 horas';
+            END IF;
+            
+            -- Validar fecha
+            IF p_fecha_reserva < CURRENT_DATE THEN
+                RAISE EXCEPTION 'No se pueden crear reservas en fechas pasadas';
+            END IF;
+            
             -- Verificar disponibilidad
             SELECT verificar_disponibilidad_cancha(p_cancha_id, p_fecha_reserva, p_hora_inicio, p_hora_fin) 
             INTO v_disponible;
@@ -355,23 +340,20 @@ BEGIN
                 v_duracion, p_observaciones, p_estado, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP
             ) RETURNING id INTO v_reserva_id;
             
-            -- Registrar en auditoría
-            INSERT INTO auditoria (
-                tabla, tipo_accion, registro_id, usuario_id, detalles, resultado, ip_address, fecha_hora
-            ) VALUES (
-                'reservas', 'INSERT', v_reserva_id, 
-                COALESCE(current_setting('app.current_user_id', true)::INTEGER, 1),
-                'Reserva creada: Cliente ' || p_cliente_id || ', Cancha ' || p_cancha_id || ', Fecha ' || p_fecha_reserva,
-                'SUCCESS', '127.0.0.1', CURRENT_TIMESTAMP
-            );
-            
             RAISE NOTICE 'Reserva creada exitosamente con ID: %', v_reserva_id;
             
         WHEN 'UPDATE' THEN
-            -- Verificar que la reserva existe
-            SELECT EXISTS(SELECT 1 FROM reservas WHERE id = p_id) INTO v_reserva_existe;
-            IF NOT v_reserva_existe THEN
-                RAISE EXCEPTION 'La reserva con ID % no existe', p_id;
+            -- Calcular duración
+            v_duracion := EXTRACT(EPOCH FROM (p_hora_fin - p_hora_inicio)) / 3600;
+            
+            -- Validar duración
+            IF v_duracion <= 0 THEN
+                RAISE EXCEPTION 'La duración debe ser mayor a 0 horas';
+            END IF;
+            
+            -- Validar fecha
+            IF p_fecha_reserva < CURRENT_DATE THEN
+                RAISE EXCEPTION 'No se pueden crear reservas en fechas pasadas';
             END IF;
             
             -- Verificar disponibilidad (excluyendo la reserva actual)
@@ -404,45 +386,17 @@ BEGIN
                 fecha_actualizacion = CURRENT_TIMESTAMP
             WHERE id = p_id;
             
-            -- Registrar en auditoría
-            INSERT INTO auditoria (
-                tabla, tipo_accion, registro_id, usuario_id, detalles, resultado, ip_address, fecha_hora
-            ) VALUES (
-                'reservas', 'UPDATE', p_id, 
-                COALESCE(current_setting('app.current_user_id', true)::INTEGER, 1),
-                'Reserva actualizada: Cliente ' || p_cliente_id || ', Cancha ' || p_cancha_id || ', Fecha ' || p_fecha_reserva,
-                'SUCCESS', '127.0.0.1', CURRENT_TIMESTAMP
-            );
-            
             RAISE NOTICE 'Reserva actualizada exitosamente';
             
         WHEN 'CANCEL' THEN
-            -- Verificar que la reserva existe
-            SELECT EXISTS(SELECT 1 FROM reservas WHERE id = p_id) INTO v_reserva_existe;
-            IF NOT v_reserva_existe THEN
-                RAISE EXCEPTION 'La reserva con ID % no existe', p_id;
-            END IF;
-            
             -- Cancelar la reserva
             UPDATE reservas SET
                 estado = 'cancelada',
                 fecha_actualizacion = CURRENT_TIMESTAMP
             WHERE id = p_id;
             
-            -- Registrar en auditoría
-            INSERT INTO auditoria (
-                tabla, tipo_accion, registro_id, usuario_id, detalles, resultado, ip_address, fecha_hora
-            ) VALUES (
-                'reservas', 'UPDATE', p_id, 
-                COALESCE(current_setting('app.current_user_id', true)::INTEGER, 1),
-                'Reserva cancelada',
-                'SUCCESS', '127.0.0.1', CURRENT_TIMESTAMP
-            );
-            
             RAISE NOTICE 'Reserva cancelada exitosamente';
     END CASE;
-    
-    COMMIT;
 END;
 $$;
 
@@ -1716,6 +1670,8 @@ COPY public.auditoria (id, usuario_id, tipo_accion, tabla, registro_id, detalles
 8	1	INSERT	pagos	8	Pago registrado automáticamente - Reserva: 2, Cliente: 2, Monto: 80.0, Método: Efectivo	SUCCESS	127.0.0.1	2025-08-03 17:17:15.672426
 9	\N	INSERT	tipos_cancha	32	Nuevo registro creado	SUCCESS	127.0.0.1	2025-08-03 18:12:26.135777
 10	\N	UPDATE	canchas	2	Registro actualizado	SUCCESS	127.0.0.1	2025-08-04 13:52:15.050537
+22	\N	UPDATE	reservas	8	Registro actualizado	SUCCESS	127.0.0.1	2025-08-06 11:07:54.967257
+23	1	INSERT	pagos	9	Pago registrado automáticamente - Reserva: 8, Cliente: 4, Monto: 100.0, Método: Efectivo	SUCCESS	127.0.0.1	2025-08-06 11:07:54.967257
 \.
 
 
@@ -1756,6 +1712,7 @@ COPY public.pagos (id, reserva_id, cliente_id, monto, metodo_pago, estado, fecha
 3	5	5	100.00	Transferencia	Completado	2025-07-31	Transferencia bancaria	2025-07-31 11:20:41.988297	2025-07-31 11:20:41.988297
 7	4	4	70.00	Efectivo	Completado	2025-08-03	monedas	2025-08-03 16:51:57.211706	2025-08-03 16:51:57.211706
 8	2	2	80.00	Efectivo	Completado	2025-08-03		2025-08-03 17:17:15.672426	2025-08-03 17:17:15.672426
+9	8	4	100.00	Efectivo	Completado	2025-08-06		2025-08-06 11:07:54.967257	2025-08-06 11:07:54.967257
 \.
 
 
@@ -1767,10 +1724,10 @@ COPY public.reservas (id, cliente_id, cancha_id, fecha_reserva, hora_inicio, hor
 1	1	1	2025-08-01	14:00:00	16:00:00	2.00	Confirmada	Partido de fútbol	2025-07-31 11:20:41.988297	2025-07-31 11:20:41.988297
 3	3	4	2025-08-03	10:00:00	11:00:00	1.00	Confirmada	Clase de tennis	2025-07-31 11:20:41.988297	2025-07-31 11:20:41.988297
 5	5	2	2025-08-04	20:00:00	22:00:00	2.00	Confirmada	Partido nocturno	2025-07-31 11:20:41.988297	2025-07-31 11:20:41.988297
-8	4	2	2025-08-02	14:00:00	16:00:00	2.00	pendiente	\N	2025-08-02 19:07:35.906714	2025-08-02 19:07:35.906714
 9	2	7	2025-08-02	14:00:00	18:00:00	4.00	pendiente	\N	2025-08-02 19:07:52.007044	2025-08-02 19:07:52.007044
 4	4	5	2025-08-01	18:00:00	20:00:00	2.00	Pagada	Torneo de voleibol	2025-07-31 11:20:41.988297	2025-08-03 16:51:57.211706
 2	2	3	2025-08-02	16:00:00	18:00:00	2.00	Pagada	Entrenamiento de basketball	2025-07-31 11:20:41.988297	2025-08-03 17:17:15.672426
+8	4	2	2025-08-02	14:00:00	16:00:00	2.00	Pagada	\N	2025-08-02 19:07:35.906714	2025-08-06 11:07:54.967257
 \.
 
 
@@ -1806,7 +1763,7 @@ COPY public.usuarios (id, username, email, password, nombre, apellido, rol, esta
 -- Name: auditoria_id_seq; Type: SEQUENCE SET; Schema: public; Owner: postgres
 --
 
-SELECT pg_catalog.setval('public.auditoria_id_seq', 10, true);
+SELECT pg_catalog.setval('public.auditoria_id_seq', 23, true);
 
 
 --
@@ -1827,14 +1784,14 @@ SELECT pg_catalog.setval('public.clientes_id_seq', 5, true);
 -- Name: pagos_id_seq; Type: SEQUENCE SET; Schema: public; Owner: postgres
 --
 
-SELECT pg_catalog.setval('public.pagos_id_seq', 8, true);
+SELECT pg_catalog.setval('public.pagos_id_seq', 9, true);
 
 
 --
 -- Name: reservas_id_seq; Type: SEQUENCE SET; Schema: public; Owner: postgres
 --
 
-SELECT pg_catalog.setval('public.reservas_id_seq', 9, true);
+SELECT pg_catalog.setval('public.reservas_id_seq', 15, true);
 
 
 --
