@@ -106,7 +106,7 @@ class ClientesLogic:
             # Consulta SQL directa para obtener clientes
             cur.execute("""
                 SELECT id, nombre, apellido, telefono, email, fecha_nacimiento,
-                       estado, fecha_creacion, fecha_actualizacion
+                       estado, fecha_registro, fecha_actualizacion
                 FROM clientes
                 ORDER BY apellido, nombre
             """)
@@ -141,7 +141,7 @@ class ClientesLogic:
             # Consulta SQL directa para obtener clientes activos
             cur.execute("""
                 SELECT id, nombre, apellido, telefono, email, fecha_nacimiento,
-                       estado, fecha_creacion, fecha_actualizacion
+                       estado, fecha_registro, fecha_actualizacion
                 FROM clientes
                 WHERE estado = 'Activo'
                 ORDER BY apellido, nombre
@@ -180,7 +180,7 @@ class ClientesLogic:
             # Consulta SQL directa para obtener cliente por ID
             cur.execute("""
                 SELECT id, nombre, apellido, telefono, email, fecha_nacimiento,
-                       estado, fecha_creacion, fecha_actualizacion
+                       estado, fecha_registro, fecha_actualizacion
                 FROM clientes
                 WHERE id = %s
             """, (cliente_id,))
@@ -376,7 +376,7 @@ class ClientesLogic:
             # Consulta SQL directa para buscar clientes
             cur.execute("""
                 SELECT id, nombre, apellido, telefono, email, fecha_nacimiento,
-                       estado, fecha_creacion, fecha_actualizacion
+                       estado, fecha_registro, fecha_actualizacion
                 FROM clientes
                 WHERE LOWER(nombre) LIKE LOWER(%s) 
                    OR LOWER(apellido) LIKE LOWER(%s)

@@ -120,12 +120,12 @@ def get_estadisticas_generales_db(conn, fecha_inicio=None, fecha_fin=None):
     total_reservas = result_reservas[0]['total_reservas'] if result_reservas else 0
     
     # Total de clientes
-    sql_clientes = "SELECT COUNT(*) as total_clientes FROM clientes WHERE activo = true"
+    sql_clientes = "SELECT COUNT(*) as total_clientes FROM clientes WHERE estado = 'Activo'"
     result_clientes = execute_query_dict(conn, sql_clientes)
     total_clientes = result_clientes[0]['total_clientes'] if result_clientes else 0
     
     # Total de canchas
-    sql_canchas = "SELECT COUNT(*) as total_canchas FROM canchas WHERE activo = true"
+    sql_canchas = "SELECT COUNT(*) as total_canchas FROM canchas WHERE estado = 'Activa'"
     result_canchas = execute_query_dict(conn, sql_canchas)
     total_canchas = result_canchas[0]['total_canchas'] if result_canchas else 0
     

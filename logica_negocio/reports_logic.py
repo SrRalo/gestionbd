@@ -14,10 +14,10 @@ from capa_datos.reports_data import (
     get_canchas_mas_recaudan_db,
     generar_estadisticas_procedimiento_db
 )
-from logica_negocio.clientes_logic import clientes_logic
-from logica_negocio.canchas_logic import canchas_logic
-from logica_negocio.reservas_logic import reservas_logic
-from logica_negocio.pagos_logic import pagos_logic
+from logica_negocio.clientes_logic import ClientesLogic
+from logica_negocio.canchas_logic import CanchasLogic
+from logica_negocio.reservas_logic import ReservasLogic
+from logica_negocio.pagos_logic import PagosLogic
 from capa_datos.database_connection import get_db_connection
 
 class ReportsLogic:
@@ -27,7 +27,10 @@ class ReportsLogic:
     
     def __init__(self):
         self.conn = None  # Inicializar como None
-        self.pagos_logic = pagos_logic
+        self.clientes_logic = ClientesLogic()
+        self.canchas_logic = CanchasLogic()
+        self.reservas_logic = ReservasLogic()
+        self.pagos_logic = PagosLogic()
     
     def _get_connection(self):
         """
@@ -64,19 +67,19 @@ class ReportsLogic:
             stats_generales = get_estadisticas_generales_db(self._get_connection())
             
             # Estadísticas de clientes
-            stats_clientes = clientes_logic.obtener_estadisticas_clientes()
+            stats_clientes = self.clientes_logic.obtener_estadisticas_clientes()
             
             # Estadísticas de canchas
-            stats_canchas = canchas_logic.obtener_estadisticas_canchas()
+            stats_canchas = self.canchas_logic.obtener_estadisticas_canchas()
             
             # Estadísticas de reservas
-            stats_reservas = reservas_logic.obtener_estadisticas_reservas()
+            stats_reservas = self.reservas_logic.obtener_estadisticas_reservas()
             
             # Estadísticas de pagos
             stats_pagos = self.pagos_logic.obtener_estadisticas_generales_pagos()
             
             # Reservas recientes (últimas 5)
-            reservas_recientes = reservas_logic.obtener_reservas(solo_activas=True)[:5]
+            reservas_recientes = self.reservas_logic.obtener_reservas(solo_activas=True)[:5]
             
             # Pagos recientes (últimos 5)
             pagos_recientes = self.pagos_logic.obtener_pagos()[:5]

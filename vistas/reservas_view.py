@@ -55,7 +55,7 @@ class ReservasView:
             
             with col1:
                 # Menú desplegable para clientes
-                cliente_options = {f"{cliente['nombre']} {cliente['apellido']} (ID: {cliente['id']})": cliente['id'] 
+                cliente_options = {f"{cliente['nombre'] or ''} {cliente['apellido'] or ''} (ID: {cliente['id']})": cliente['id'] 
                                  for cliente in clientes}
                 cliente_seleccionado = st.selectbox(
                     "Cliente *",
@@ -66,7 +66,7 @@ class ReservasView:
             
             with col2:
                 # Menú desplegable para canchas
-                cancha_options = {f"{cancha['nombre_cancha']} - {cancha['tipo_cancha_nombre']} (ID: {cancha['id']})": cancha['id']
+                cancha_options = {f"{cancha['nombre']} - {cancha['tipo_cancha_nombre'] or 'Sin tipo'} (ID: {cancha['id']})": cancha['id']
                                 for cancha in canchas}
                 cancha_seleccionada = st.selectbox(
                     "Cancha *",
@@ -161,8 +161,27 @@ class ReservasView:
     def obtener_clientes_para_select(self):
         """Obtener lista de clientes para el menú desplegable"""
         try:
-            clientes = self.clientes_logic.obtener_clientes_activos()
-            return clientes if clientes else []
+            clientes_tuples = self.clientes_logic.obtener_clientes_activos()
+            if not clientes_tuples:
+                return []
+            
+            # Convertir tuplas a diccionarios
+            clientes = []
+            for cliente_tuple in clientes_tuples:
+                cliente_dict = {
+                    'id': cliente_tuple[0],
+                    'nombre': cliente_tuple[1],
+                    'apellido': cliente_tuple[2],
+                    'telefono': cliente_tuple[3],
+                    'email': cliente_tuple[4],
+                    'fecha_nacimiento': cliente_tuple[5],
+                    'estado': cliente_tuple[6],
+                    'fecha_registro': cliente_tuple[7],
+                    'fecha_actualizacion': cliente_tuple[8]
+                }
+                clientes.append(cliente_dict)
+            
+            return clientes
         except Exception as e:
             st.error(f"Error al obtener clientes: {e}")
             return []
@@ -170,8 +189,33 @@ class ReservasView:
     def obtener_canchas_para_select(self):
         """Obtener lista de canchas para el menú desplegable"""
         try:
-            canchas = self.canchas_logic.obtener_canchas_con_tipos()
-            return canchas if canchas else []
+            canchas_tuples = self.canchas_logic.obtener_canchas_con_tipos()
+            if not canchas_tuples:
+                return []
+            
+            # Convertir tuplas a diccionarios
+            canchas = []
+            for cancha_tuple in canchas_tuples:
+                cancha_dict = {
+                    'id': cancha_tuple[0],
+                    'nombre': cancha_tuple[1],
+                    'tipo_deporte': cancha_tuple[2],
+                    'capacidad': cancha_tuple[3],
+                    'precio_hora': cancha_tuple[4],
+                    'estado': cancha_tuple[5],
+                    'horario_apertura': cancha_tuple[6],
+                    'horario_cierre': cancha_tuple[7],
+                    'descripcion': cancha_tuple[8],
+                    'fecha_creacion': cancha_tuple[9],
+                    'fecha_actualizacion': cancha_tuple[10],
+                    'tipo_cancha_id': cancha_tuple[11],
+                    'tipo_cancha_nombre': cancha_tuple[12],
+                    'tipo_cancha_descripcion': cancha_tuple[13],
+                    'precio_por_hora': cancha_tuple[14]
+                }
+                canchas.append(cancha_dict)
+            
+            return canchas
         except Exception as e:
             st.error(f"Error al obtener canchas: {e}")
             return []

@@ -112,10 +112,10 @@ class CanchasLogic:
             
             # Consulta SQL directa para obtener tipos de cancha
             cur.execute("""
-                SELECT id, nombre, descripcion, precio_por_hora, activo,
+                SELECT id, nombre, descripcion, precio_por_hora, estado,
                        fecha_creacion, fecha_actualizacion
                 FROM tipos_cancha
-                WHERE activo = true
+                WHERE estado = 'Activo'
                 ORDER BY nombre
             """)
             

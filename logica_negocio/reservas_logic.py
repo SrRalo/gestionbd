@@ -123,11 +123,6 @@ class ReservasLogic:
                 self._log_error("Horario no válido")
                 return None
             
-            # Verificar disponibilidad
-            if not self.verificar_disponibilidad(cancha_id, fecha_reserva, hora_inicio, hora_fin):
-                self._log_error("La cancha no está disponible en el horario seleccionado")
-                return None
-            
             conn = get_db_connection()
             if not conn:
                 return None
@@ -136,8 +131,8 @@ class ReservasLogic:
             
             # Llamada directa al procedimiento almacenado proc_gestionar_reserva
             cur.execute("""
-                CALL proc_gestionar_reserva('INSERT', %s, %s, %s, %s, %s, %s, %s)
-            """, (cliente_id, cancha_id, fecha_reserva, hora_inicio, hora_fin, observaciones, 'pendiente'))
+                CALL proc_gestionar_reserva('CREATE', NULL, %s, %s, %s, %s, %s, %s, %s)
+            """, (cliente_id, cancha_id, fecha_reserva, hora_inicio, hora_fin, observaciones or '', 'pendiente'))
             
             # Obtener el ID de la reserva creada
             cur.execute("""
@@ -312,8 +307,8 @@ class ReservasLogic:
             
             # Llamada directa al procedimiento almacenado proc_gestionar_reserva
             cur.execute("""
-                CALL proc_gestionar_reserva('UPDATE', %s, %s, %s, %s, %s, %s, %s)
-            """, (cliente_id, cancha_id, fecha_reserva, hora_inicio, hora_fin, observaciones, estado))
+                CALL proc_gestionar_reserva('UPDATE', %s, %s, %s, %s, %s, %s, %s, %s)
+            """, (reserva_id, cliente_id, cancha_id, fecha_reserva, hora_inicio, hora_fin, observaciones or '', estado))
             
             conn.commit()
             cur.close()
@@ -354,8 +349,8 @@ class ReservasLogic:
             
             # Llamada directa al procedimiento almacenado proc_gestionar_reserva
             cur.execute("""
-                CALL proc_gestionar_reserva('DELETE', %s, %s, %s, %s, %s, 'Reserva cancelada', 'cancelada')
-            """, (cliente_id, cancha_id, fecha_reserva, hora_inicio, hora_fin))
+                CALL proc_gestionar_reserva('CANCEL', %s, %s, %s, %s, %s, %s, 'Reserva cancelada', 'cancelada')
+            """, (reserva_id, cliente_id, cancha_id, fecha_reserva, hora_inicio, hora_fin))
             
             conn.commit()
             cur.close()

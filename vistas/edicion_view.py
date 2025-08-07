@@ -25,12 +25,72 @@ class EdicionView:
         with tab2:
             self.show_edicion_tipos_cancha()
     
+    def obtener_canchas_para_edicion(self):
+        """Obtener lista de canchas convertida a diccionarios para edición"""
+        try:
+            canchas_tuples = self.canchas_logic.obtener_canchas_con_tipos()
+            if not canchas_tuples:
+                return []
+            
+            # Convertir tuplas a diccionarios
+            canchas = []
+            for cancha_tuple in canchas_tuples:
+                cancha_dict = {
+                    'id': cancha_tuple[0],
+                    'nombre': cancha_tuple[1],
+                    'tipo_deporte': cancha_tuple[2],
+                    'capacidad': cancha_tuple[3],
+                    'precio_hora': cancha_tuple[4],
+                    'estado': cancha_tuple[5],
+                    'horario_apertura': cancha_tuple[6],
+                    'horario_cierre': cancha_tuple[7],
+                    'descripcion': cancha_tuple[8],
+                    'fecha_creacion': cancha_tuple[9],
+                    'fecha_actualizacion': cancha_tuple[10],
+                    'tipo_cancha_id': cancha_tuple[11],
+                    'tipo_cancha_nombre': cancha_tuple[12],
+                    'tipo_cancha_descripcion': cancha_tuple[13],
+                    'precio_por_hora': cancha_tuple[14]
+                }
+                canchas.append(cancha_dict)
+            
+            return canchas
+        except Exception as e:
+            st.error(f"Error al obtener canchas: {e}")
+            return []
+    
+    def obtener_tipos_cancha_para_edicion(self):
+        """Obtener lista de tipos de cancha convertida a diccionarios para edición"""
+        try:
+            tipos_tuples = self.canchas_logic.obtener_tipos_cancha()
+            if not tipos_tuples:
+                return []
+            
+            # Convertir tuplas a diccionarios
+            tipos = []
+            for tipo_tuple in tipos_tuples:
+                tipo_dict = {
+                    'id': tipo_tuple[0],
+                    'nombre': tipo_tuple[1],
+                    'descripcion': tipo_tuple[2],
+                    'precio_por_hora': tipo_tuple[3],
+                    'estado': tipo_tuple[4],
+                    'fecha_creacion': tipo_tuple[5],
+                    'fecha_actualizacion': tipo_tuple[6]
+                }
+                tipos.append(tipo_dict)
+            
+            return tipos
+        except Exception as e:
+            st.error(f"Error al obtener tipos de cancha: {e}")
+            return []
+    
     def show_edicion_canchas(self):
         """Mostrar interfaz para editar canchas"""
         st.markdown("### 🏟️ Gestión de Canchas")
         
         # Obtener canchas
-        canchas = self.canchas_logic.obtener_canchas()
+        canchas = self.obtener_canchas_para_edicion()
         
         if not canchas:
             st.warning("No hay canchas disponibles para editar.")
@@ -167,7 +227,7 @@ class EdicionView:
         st.markdown("### 📋 Gestión de Tipos de Cancha")
         
         # Obtener tipos de cancha
-        tipos_cancha = self.canchas_logic.obtener_tipos_cancha()
+        tipos_cancha = self.obtener_tipos_cancha_para_edicion()
         
         if not tipos_cancha:
             st.warning("No hay tipos de cancha disponibles para editar.")
@@ -203,7 +263,7 @@ class EdicionView:
             with col3:
                 st.write(f"${tipo.get('precio_por_hora', 0):.2f}")
             with col4:
-                if tipo.get('activo', True):
+                if tipo.get('estado', 'Activo') == 'Activo':
                     st.success("✅ Activo")
                 else:
                     st.error("❌ Inactivo")
@@ -238,7 +298,7 @@ class EdicionView:
                 precio_por_hora = st.number_input("Precio por Hora ($)", min_value=0.0, value=float(tipo.get('precio_por_hora', 50.0)), step=0.5, key=f"edit_tipo_precio_{tipo.get('id')}")
             
             with col2:
-                activo = st.checkbox("Activo", value=tipo.get('activo', True), key=f"edit_tipo_activo_{tipo.get('id')}")
+                activo = st.checkbox("Activo", value=tipo.get('estado', 'Activo') == 'Activo', key=f"edit_tipo_activo_{tipo.get('id')}")
             
             descripcion = st.text_area("Descripción", value=tipo.get('descripcion', ''), key=f"edit_tipo_descripcion_{tipo.get('id')}")
             
