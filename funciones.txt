@@ -1,0 +1,39 @@
+📋 LISTADO COMPLETO DE FUNCIONES, VISTAS, TRIGGERS Y PROCEDIMIENTOS ALMACENADOS
+🔧 FUNCIONES SQL
+Función para actualizar cancha = actualizar_cancha(integer, varchar, varchar, integer, numeric, varchar, time, time, text, integer), esta función se usa en el archivo capa_datos/canchas_data.py
+Función para actualizar fecha tipos cancha = actualizar_fecha_tipos_cancha(), esta función se usa como trigger en esquema.sql
+Función para crear cancha = crear_cancha(varchar, varchar, integer, numeric, varchar, time, time, text, integer), esta función se usa en el archivo capa_datos/canchas_data.py
+Función para crear reserva = crear_reserva(integer, integer, date, time, time, text), esta función se usa en el archivo capa_datos/reservas_data.py
+Función para crear tipo cancha = crear_tipo_cancha(varchar, text, numeric), esta función se usa en el archivo capa_datos/canchas_data.py
+Función para eliminar cancha = eliminar_cancha(integer), esta función se usa en el archivo capa_datos/canchas_data.py
+Función para eliminar tipo cancha = eliminar_tipo_cancha(integer), esta función se usa en el archivo capa_datos/canchas_data.py
+Función para obtener cancha por ID = obtener_cancha_por_id(integer), esta función se usa en el archivo capa_datos/canchas_data.py
+Función para obtener canchas = obtener_canchas(), esta función se usa en el archivo capa_datos/canchas_data.py
+Función para obtener canchas con tipos = obtener_canchas_con_tipos(), esta función se usa en el archivo capa_datos/canchas_data.py
+Función para obtener tipos cancha = obtener_tipos_cancha(), esta función se usa en el archivo capa_datos/canchas_data.py
+Función para registrar auditoría automática = registrar_auditoria_automatica(), esta función se usa como trigger en esquema.sql
+Función para actualizar columna updated_at = update_updated_at_column(), esta función se usa como trigger en esquema.sql
+Función para verificar disponibilidad cancha = verificar_disponibilidad_cancha(integer, date, time, time), esta función se usa en el archivo capa_datos/reservas_data.py
+🔄 PROCEDIMIENTOS ALMACENADOS
+Procedimiento para generar estadísticas = proc_generar_estadisticas(date, date, varchar), este procedimiento se usa en el archivo capa_datos/reports_data.py
+Procedimiento para gestionar reservas = proc_gestionar_reserva(varchar, integer, integer, integer, date, time, time, text, varchar), este procedimiento se usa en el archivo capa_datos/reservas_data.py
+Procedimiento para registrar auditoría manual = proc_registrar_auditoria_manual(integer, varchar, varchar, integer, text, varchar), este procedimiento se usa en el archivo capa_datos/auditoria_data.py
+Procedimiento para registrar pago = proc_registrar_pago(integer, numeric, varchar, text), este procedimiento se usa en el archivo vistas/pagos_view.py
+Procedimiento para validar y limpiar datos = proc_validar_y_limpiar_datos(varchar, varchar), este procedimiento se usa en el archivo capa_datos/validacion_data.py
+👁️ VISTAS
+Vista historial pagos = vista_historial_pagos, esta vista se usa en el archivo vistas/pagos_view.py
+Vista reservas pendientes pago = vista_reservas_pendientes_pago, esta vista se usa en el archivo vistas/pagos_view.py
+Vista resumen pagos período = vista_resumen_pagos_periodo, esta vista se usa en el archivo vistas/pagos_view.py
+⚡ TRIGGERS
+Trigger para actualizar fecha tipos cancha = trigger_actualizar_fecha_tipos_cancha, este trigger se usa en el archivo esquema.sql
+Trigger para auditoría canchas = trigger_auditoria_canchas, este trigger se usa en el archivo esquema.sql
+Trigger para auditoría clientes = trigger_auditoria_clientes, este trigger se usa en el archivo esquema.sql
+Trigger para auditoría reservas = trigger_auditoria_reservas, este trigger se usa en el archivo esquema.sql
+Trigger para auditoría tipos cancha = trigger_auditoria_tipos_cancha, este trigger se usa en el archivo esquema.sql
+Trigger para auditoría usuarios = trigger_auditoria_usuarios, este trigger se usa en el archivo esquema.sql
+Trigger para actualizar canchas updated_at = update_canchas_updated_at, este trigger se usa en el archivo esquema.sql
+Trigger para actualizar clientes updated_at = update_clientes_updated_at, este trigger se usa en el archivo esquema.sql
+Trigger para actualizar pagos updated_at = update_pagos_updated_at, este trigger se usa en el archivo esquema.sql
+Trigger para actualizar reservas updated_at = update_reservas_updated_at, este trigger se usa en el archivo esquema.sql
+Trigger para actualizar tipos cancha updated_at = update_tipos_cancha_updated_at, este trigger se usa en el archivo esquema.sql
+Trigger para actualizar usuarios updated_at = update_usuarios_updated_at, este trigger se usa en el archivo esquema.sql

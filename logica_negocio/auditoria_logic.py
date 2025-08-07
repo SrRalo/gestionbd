@@ -18,11 +18,12 @@ class AuditoriaLogic:
         """Inicializar la lógica de auditoría"""
         pass
     
-    def registrar_accion(self, usuario_id, tipo_accion, tabla, registro_id, detalles, resultado="SUCCESS"):
+    def registrar_accion(self, conn, usuario_id, tipo_accion, tabla, registro_id, detalles, resultado="SUCCESS"):
         """
         Registra una acción en la auditoría
         
         Args:
+            conn: Conexión a la base de datos
             usuario_id (int): ID del usuario que realiza la acción
             tipo_accion (str): Tipo de acción (INSERT, UPDATE, DELETE, etc.)
             tabla (str): Nombre de la tabla afectada
@@ -33,7 +34,7 @@ class AuditoriaLogic:
         Returns:
             bool: True si se registró correctamente
         """
-        return registrar_accion_auditoria(usuario_id, tipo_accion, tabla, registro_id, detalles, resultado)
+        return registrar_accion_auditoria(conn, usuario_id, tipo_accion, tabla, registro_id, detalles, resultado)
     
     def obtener_auditoria(self):
         """

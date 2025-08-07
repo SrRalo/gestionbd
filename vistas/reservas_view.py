@@ -161,7 +161,7 @@ class ReservasView:
     def obtener_clientes_para_select(self):
         """Obtener lista de clientes para el menú desplegable"""
         try:
-            clientes = self.clientes_logic.obtener_clientes(solo_activos=True)
+            clientes = self.clientes_logic.obtener_clientes_activos()
             return clientes if clientes else []
         except Exception as e:
             st.error(f"Error al obtener clientes: {e}")
@@ -222,9 +222,31 @@ class ReservasView:
         st.markdown("### 📋 Lista de Reservas")
         
         try:
-            reservas = self.reservas_logic.obtener_reservas()
+            # Conexión directa a la base de datos
+            from capa_datos.database_connection import get_db_connection
+            conn = get_db_connection()
             
-            if reservas:
+            if not conn:
+                st.error("❌ No se pudo conectar a la base de datos")
+                return
+            
+            # Consulta directa y simple
+            with conn.cursor() as cur:
+                cur.execute("SELECT * FROM reservas ORDER BY fecha_reserva DESC, hora_inicio DESC")
+                reservas_raw = cur.fetchall()
+                
+                # Obtener nombres de columnas
+                column_names = [desc[0] for desc in cur.description]
+            
+            conn.close()
+            
+            if reservas_raw:
+                # Convertir a lista de diccionarios
+                reservas = []
+                for row in reservas_raw:
+                    reserva_dict = dict(zip(column_names, row))
+                    reservas.append(reserva_dict)
+                
                 # Crear DataFrame para mejor visualización
                 df = pd.DataFrame(reservas)
                 
@@ -258,41 +280,14 @@ class ReservasView:
                         lambda x: x.strftime('%H:%M') if hasattr(x, 'strftime') else str(x)
                     )
                 
-                # Implementar paginación
-                total_registros = len(df_renamed)
-                registros_por_pagina = 5
-                total_paginas = (total_registros + registros_por_pagina - 1) // registros_por_pagina
+                # Mostrar registros
+                st.dataframe(df_renamed, use_container_width=True)
                 
-                # Controles de paginación
-                col1, col2, col3 = st.columns([1, 2, 1])
-                
-                with col1:
-                    if st.button("⬅️ Anterior", disabled=st.session_state.get('pagina_reservas', 1) <= 1, key="reservas_prev_btn"):
-                        st.session_state.pagina_reservas = max(1, st.session_state.get('pagina_reservas', 1) - 1)
-                        st.rerun()
-                
-                with col2:
-                    pagina_actual = st.session_state.get('pagina_reservas', 1)
-                    st.markdown(f"**Página {pagina_actual} de {total_paginas}**")
-                
-                with col3:
-                    if st.button("➡️ Siguiente", disabled=pagina_actual >= total_paginas, key="reservas_next_btn"):
-                        st.session_state.pagina_reservas = min(total_paginas, pagina_actual + 1)
-                        st.rerun()
-                
-                # Calcular índices para la página actual
-                inicio = (pagina_actual - 1) * registros_por_pagina
-                fin = min(inicio + registros_por_pagina, total_registros)
-                
-                # Mostrar registros de la página actual
-                df_pagina = df_renamed.iloc[inicio:fin]
-                
-                st.dataframe(df_pagina, use_container_width=True)
-                
-                # Estadísticas
+                # Estadísticas simples
+                total_registros = len(reservas)
                 col1, col2, col3, col4 = st.columns(4)
                 with col1:
-                    st.metric("Total Reservas", len(reservas))
+                    st.metric("Total Reservas", total_registros)
                 with col2:
                     confirmadas = len([r for r in reservas if r.get('estado', '').lower() == 'confirmada'])
                     st.metric("Confirmadas", confirmadas)
@@ -302,11 +297,14 @@ class ReservasView:
                 with col4:
                     canceladas = len([r for r in reservas if r.get('estado', '').lower() == 'cancelada'])
                     st.metric("Canceladas", canceladas)
+                    
+                st.success(f"✅ Se encontraron {total_registros} reservas en la base de datos")
             else:
                 st.info("📭 No hay reservas registradas")
                 
         except Exception as e:
             st.error(f"Error al obtener reservas: {e}")
+            st.error(f"Detalles del error: {str(e)}")
     
     def show_buscar_reservas(self):
         """Mostrar opciones de búsqueda de reservas"""

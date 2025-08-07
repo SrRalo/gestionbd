@@ -10,15 +10,23 @@ def reset_transaction(conn):
         conn: Conexión a la base de datos
     """
     try:
+        # Verificar que la conexión existe
+        if conn is None:
+            return False
+        
         # Intentar hacer rollback para limpiar la transacción abortada
         conn.rollback()
     except psycopg2.Error:
         # Si el rollback falla, intentar hacer commit para forzar un nuevo estado
         try:
-            conn.commit()
+            if conn is not None:
+                conn.commit()
         except psycopg2.Error:
             # Si ambos fallan, la conexión está en mal estado
             return False
+    except Exception:
+        # Si hay cualquier otro error, la conexión está en mal estado
+        return False
     return True
 
 def execute_query(conn, sql, params=None, fetch=True):
@@ -35,8 +43,13 @@ def execute_query(conn, sql, params=None, fetch=True):
         list: Resultados de la consulta o None si hay error
     """
     try:
+        # Verificar que la conexión existe
+        if conn is None:
+            st.error("❌ Error: No hay conexión a la base de datos")
+            return None
+        
         # Verificar si la transacción está abortada y reiniciarla
-        if conn.status == psycopg2.extensions.STATUS_IN_TRANSACTION:
+        if hasattr(conn, 'status') and conn.status == psycopg2.extensions.STATUS_IN_TRANSACTION:
             reset_transaction(conn)
         
         with conn.cursor() as cur:
@@ -49,7 +62,11 @@ def execute_query(conn, sql, params=None, fetch=True):
     except psycopg2.Error as e:
         st.error(f"Error en consulta SQL: {e}")
         # Intentar reiniciar la transacción después del error
-        reset_transaction(conn)
+        if conn is not None:
+            reset_transaction(conn)
+        return None
+    except Exception as e:
+        st.error(f"Error inesperado en consulta SQL: {e}")
         return None
 
 def execute_query_dict(conn, sql, params=None):
@@ -65,8 +82,13 @@ def execute_query_dict(conn, sql, params=None):
         list: Lista de diccionarios con los resultados
     """
     try:
+        # Verificar que la conexión existe
+        if conn is None:
+            st.error("❌ Error: No hay conexión a la base de datos")
+            return []
+        
         # Verificar si la transacción está abortada y reiniciarla
-        if conn.status == psycopg2.extensions.STATUS_IN_TRANSACTION:
+        if hasattr(conn, 'status') and conn.status == psycopg2.extensions.STATUS_IN_TRANSACTION:
             reset_transaction(conn)
         
         with conn.cursor(cursor_factory=RealDictCursor) as cur:
@@ -75,7 +97,11 @@ def execute_query_dict(conn, sql, params=None):
     except psycopg2.Error as e:
         st.error(f"Error en consulta SQL: {e}")
         # Intentar reiniciar la transacción después del error
-        reset_transaction(conn)
+        if conn is not None:
+            reset_transaction(conn)
+        return []
+    except Exception as e:
+        st.error(f"Error inesperado en consulta SQL: {e}")
         return []
 
 def execute_transaction(conn, queries):
@@ -90,8 +116,13 @@ def execute_transaction(conn, queries):
         bool: True si la transacción fue exitosa, False en caso contrario
     """
     try:
+        # Verificar que la conexión existe
+        if conn is None:
+            st.error("❌ Error: No hay conexión a la base de datos")
+            return False
+        
         # Verificar si la transacción está abortada y reiniciarla
-        if conn.status == psycopg2.extensions.STATUS_IN_TRANSACTION:
+        if hasattr(conn, 'status') and conn.status == psycopg2.extensions.STATUS_IN_TRANSACTION:
             reset_transaction(conn)
         
         with conn.cursor() as cur:
@@ -101,7 +132,11 @@ def execute_transaction(conn, queries):
             return True
     except psycopg2.Error as e:
         st.error(f"Error en transacción: {e}")
-        conn.rollback()
+        if conn is not None:
+            conn.rollback()
+        return False
+    except Exception as e:
+        st.error(f"Error inesperado en transacción: {e}")
         return False
 
 def call_function(conn, function_name, params=None):
@@ -117,8 +152,13 @@ def call_function(conn, function_name, params=None):
         tuple: Resultado de la función o None si hay error
     """
     try:
+        # Verificar que la conexión existe
+        if conn is None:
+            st.error("❌ Error: No hay conexión a la base de datos")
+            return None
+        
         # Verificar si la transacción está abortada y reiniciarla
-        if conn.status == psycopg2.extensions.STATUS_IN_TRANSACTION:
+        if hasattr(conn, 'status') and conn.status == psycopg2.extensions.STATUS_IN_TRANSACTION:
             reset_transaction(conn)
         
         with conn.cursor() as cur:
@@ -131,7 +171,11 @@ def call_function(conn, function_name, params=None):
             return result
     except psycopg2.Error as e:
         st.error(f"Error al llamar función {function_name}: {e}")
-        conn.rollback()
+        if conn is not None:
+            conn.rollback()
+        return None
+    except Exception as e:
+        st.error(f"Error inesperado al llamar función {function_name}: {e}")
         return None
 
 def call_procedure(conn, procedure_name, params=None):
@@ -147,8 +191,13 @@ def call_procedure(conn, procedure_name, params=None):
         bool: True si el procedimiento se ejecutó correctamente
     """
     try:
+        # Verificar que la conexión existe
+        if conn is None:
+            st.error("❌ Error: No hay conexión a la base de datos")
+            return False
+        
         # Verificar si la transacción está abortada y reiniciarla
-        if conn.status == psycopg2.extensions.STATUS_IN_TRANSACTION:
+        if hasattr(conn, 'status') and conn.status == psycopg2.extensions.STATUS_IN_TRANSACTION:
             reset_transaction(conn)
         
         with conn.cursor() as cur:
@@ -167,4 +216,7 @@ def call_procedure(conn, procedure_name, params=None):
     except psycopg2.Error as e:
         st.error(f"Error al llamar procedimiento {procedure_name}: {e}")
         # No hacer rollback aquí, dejar que la función llamadora maneje la transacción
+        return False
+    except Exception as e:
+        st.error(f"Error inesperado al llamar procedimiento {procedure_name}: {e}")
         return False 

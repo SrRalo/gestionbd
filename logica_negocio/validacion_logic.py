@@ -1,9 +1,13 @@
 import streamlit as st
 from capa_datos.validacion_data import (
-    validar_datos_db, limpiar_datos_db, crear_backup_db,
-    validar_todas_las_tablas_db, limpiar_todas_las_tablas_db,
+    validar_datos_db,
+    limpiar_datos_db,
+    crear_backup_db,
+    validar_todas_las_tablas_db,
+    limpiar_todas_las_tablas_db,
     crear_backup_todas_las_tablas_db
 )
+from capa_datos.database_connection import get_db_connection
 
 class ValidacionLogic:
     """
@@ -11,8 +15,31 @@ class ValidacionLogic:
     """
     
     def __init__(self):
-        self.conn = st.session_state.get('db_connection')
+        self.conn = None  # Inicializar como None
         self.tablas_disponibles = ['clientes', 'canchas', 'reservas', 'pagos', 'usuarios']
+    
+    def _get_connection(self):
+        """
+        Obtiene una conexión a la base de datos usando la función ya definida.
+        
+        Returns:
+            psycopg2.connection: Conexión a la base de datos
+        """
+        if not self.conn:
+            self.conn = get_db_connection()
+        return self.conn
+    
+    def _log_error(self, message):
+        """
+        Registra un error de manera compatible con Streamlit y fuera de él.
+        
+        Args:
+            message (str): Mensaje de error
+        """
+        try:
+            st.error(message)
+        except:
+            print(f"ERROR: {message}")
     
     def validar_tabla(self, tabla):
         """
@@ -26,13 +53,18 @@ class ValidacionLogic:
         """
         try:
             if tabla not in self.tablas_disponibles:
-                st.error(f"❌ Tabla '{tabla}' no está disponible para validación")
+                self._log_error(f"❌ Tabla '{tabla}' no está disponible para validación")
                 return False
             
-            return validar_datos_db(self.conn, tabla)
+            conn = self._get_connection()
+            if not conn:
+                self._log_error("No hay conexión a la base de datos")
+                return False
+            
+            return validar_datos_db(conn, tabla)
             
         except Exception as e:
-            st.error(f"Error al validar tabla {tabla}: {e}")
+            self._log_error(f"Error al validar tabla {tabla}: {e}")
             return False
     
     def limpiar_tabla(self, tabla):
@@ -47,7 +79,7 @@ class ValidacionLogic:
         """
         try:
             if tabla not in self.tablas_disponibles:
-                st.error(f"❌ Tabla '{tabla}' no está disponible para limpieza")
+                self._log_error(f"❌ Tabla '{tabla}' no está disponible para limpieza")
                 return False
             
             # Confirmar antes de limpiar
@@ -55,10 +87,15 @@ class ValidacionLogic:
                 st.warning("⚠️ La limpieza de datos es irreversible. Confirme la acción.")
                 return False
             
-            return limpiar_datos_db(self.conn, tabla)
+            conn = self._get_connection()
+            if not conn:
+                self._log_error("No hay conexión a la base de datos")
+                return False
+            
+            return limpiar_datos_db(conn, tabla)
             
         except Exception as e:
-            st.error(f"Error al limpiar tabla {tabla}: {e}")
+            self._log_error(f"Error al limpiar tabla {tabla}: {e}")
             return False
     
     def crear_backup_tabla(self, tabla):
@@ -73,13 +110,18 @@ class ValidacionLogic:
         """
         try:
             if tabla not in self.tablas_disponibles:
-                st.error(f"❌ Tabla '{tabla}' no está disponible para backup")
+                self._log_error(f"❌ Tabla '{tabla}' no está disponible para backup")
                 return False
             
-            return crear_backup_db(self.conn, tabla)
+            conn = self._get_connection()
+            if not conn:
+                self._log_error("No hay conexión a la base de datos")
+                return False
+            
+            return crear_backup_db(conn, tabla)
             
         except Exception as e:
-            st.error(f"Error al crear backup de tabla {tabla}: {e}")
+            self._log_error(f"Error al crear backup de tabla {tabla}: {e}")
             return False
     
     def validar_todas_las_tablas(self):
@@ -90,8 +132,13 @@ class ValidacionLogic:
             dict: Diccionario con el resultado de validación de cada tabla
         """
         try:
+            conn = self._get_connection()
+            if not conn:
+                self._log_error("No hay conexión a la base de datos")
+                return {}
+            
             st.info("🔄 Iniciando validación de todas las tablas...")
-            resultados = validar_todas_las_tablas_db(self.conn)
+            resultados = validar_todas_las_tablas_db(conn)
             
             # Mostrar resumen
             exitosas = sum(1 for resultado in resultados.values() if resultado)
@@ -102,7 +149,7 @@ class ValidacionLogic:
             return resultados
             
         except Exception as e:
-            st.error(f"Error al validar todas las tablas: {e}")
+            self._log_error(f"Error al validar todas las tablas: {e}")
             return {}
     
     def limpiar_todas_las_tablas(self):
@@ -118,8 +165,13 @@ class ValidacionLogic:
                 st.warning("⚠️ La limpieza de todas las tablas es irreversible. Confirme la acción.")
                 return {}
             
+            conn = self._get_connection()
+            if not conn:
+                self._log_error("No hay conexión a la base de datos")
+                return {}
+            
             st.info("🔄 Iniciando limpieza de todas las tablas...")
-            resultados = limpiar_todas_las_tablas_db(self.conn)
+            resultados = limpiar_todas_las_tablas_db(conn)
             
             # Mostrar resumen
             exitosas = sum(1 for resultado in resultados.values() if resultado)
@@ -130,7 +182,7 @@ class ValidacionLogic:
             return resultados
             
         except Exception as e:
-            st.error(f"Error al limpiar todas las tablas: {e}")
+            self._log_error(f"Error al limpiar todas las tablas: {e}")
             return {}
     
     def crear_backup_todas_las_tablas(self):
@@ -141,8 +193,13 @@ class ValidacionLogic:
             dict: Diccionario con el resultado de backup de cada tabla
         """
         try:
+            conn = self._get_connection()
+            if not conn:
+                self._log_error("No hay conexión a la base de datos")
+                return {}
+            
             st.info("🔄 Iniciando backup de todas las tablas...")
-            resultados = crear_backup_todas_las_tablas_db(self.conn)
+            resultados = crear_backup_todas_las_tablas_db(conn)
             
             # Mostrar resumen
             exitosas = sum(1 for resultado in resultados.values() if resultado)
@@ -153,7 +210,7 @@ class ValidacionLogic:
             return resultados
             
         except Exception as e:
-            st.error(f"Error al crear backup de todas las tablas: {e}")
+            self._log_error(f"Error al crear backup de todas las tablas: {e}")
             return {}
     
     def obtener_estadisticas_validacion(self):
@@ -175,7 +232,7 @@ class ValidacionLogic:
             return estadisticas
             
         except Exception as e:
-            st.error(f"Error al obtener estadísticas de validación: {e}")
+            self._log_error(f"Error al obtener estadísticas de validación: {e}")
             return {}
 
 # Instancia global de la lógica de validación

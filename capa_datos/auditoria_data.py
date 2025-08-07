@@ -6,11 +6,12 @@ import streamlit as st
 from capa_datos.data_access import execute_query, execute_query_dict, call_procedure
 from capa_datos.database_connection import get_db_connection
 
-def registrar_accion_auditoria(usuario_id, tipo_accion, tabla, registro_id, detalles, ip_address='127.0.0.1'):
+def registrar_accion_auditoria(conn, usuario_id, tipo_accion, tabla, registro_id, detalles, ip_address='127.0.0.1'):
     """
     Registra una acción en la tabla de auditoría usando el procedimiento almacenado.
     
     Args:
+        conn: Conexión a la base de datos
         usuario_id (int): ID del usuario que realizó la acción
         tipo_accion (str): Tipo de acción (INSERT, UPDATE, DELETE, SELECT, LOGIN, LOGOUT, ERROR)
         tabla (str): Nombre de la tabla afectada
@@ -22,11 +23,19 @@ def registrar_accion_auditoria(usuario_id, tipo_accion, tabla, registro_id, deta
         bool: True si se registró correctamente, False en caso contrario
     """
     try:
-        # Llamar al procedimiento almacenado
+        # Validar que el tipo de acción sea válido
+        tipos_validos = ['INSERT', 'UPDATE', 'DELETE', 'SELECT', 'LOGIN', 'LOGOUT', 'ERROR']
+        if tipo_accion not in tipos_validos:
+            # Si no es válido, usar 'ERROR' como fallback
+            tipo_accion = 'ERROR'
+            detalles = f"Acción no válida '{tipo_accion}': {detalles}"
+        
+        # Llamar al procedimiento almacenado con el orden correcto de parámetros
+        # Orden: (p_tipo_accion, p_usuario_id, p_tabla, p_registro_id, p_detalles, p_ip_address)
         success = call_procedure(
-            st.session_state.get('db_connection'),
+            conn,
             'proc_registrar_auditoria_manual',
-            (usuario_id, tipo_accion, tabla, registro_id, detalles, ip_address)
+            (tipo_accion, usuario_id, tabla, registro_id, detalles, ip_address)
         )
         
         if not success:

@@ -1,19 +1,25 @@
 import streamlit as st
+import psycopg2
 import re
 from datetime import date
-from capa_datos.clientes_data import (
-    insert_cliente_db, get_clientes_db, get_cliente_by_id_db, 
-    update_cliente_db, delete_cliente_db, search_clientes_db,
-    get_clientes_activos_db
-)
+from capa_datos.database_connection import get_db_connection
 
 class ClientesLogic:
     """
     Lógica de negocio para la gestión de clientes.
     """
     
-    def __init__(self):
-        self.conn = st.session_state.get('db_connection')
+    def _log_error(self, message):
+        """
+        Registra un error de manera compatible con Streamlit y fuera de él.
+        
+        Args:
+            message (str): Mensaje de error
+        """
+        try:
+            st.error(message)
+        except:
+            print(f"ERROR: {message}")
     
     def validar_email(self, email):
         """
@@ -58,38 +64,12 @@ class ClientesLogic:
         
         return True
     
-    # def validar_documento(self, documento):
-    #     """
-    #     Valida el formato de un documento de identidad.
-    #     
-    #     Args:
-    #         documento (str): Documento a validar
-    #     
-    #     Returns:
-    #         bool: True si el documento es válido
-    #     """
-    #     if not documento:
-    #         return True  # El documento es opcional
-    #     
-    #     # Eliminar espacios y guiones
-    #     documento_limpio = re.sub(r'[\s\-]', '', documento)
-    #     
-    #     # Verificar que solo contenga dígitos y letras
-    #     if not re.match(r'^[A-Za-z0-9]+$', documento_limpio):
-    #         return False
-    #     
-    #     # Verificar longitud mínima (al menos 5 caracteres)
-    #     if len(documento_limpio) < 5:
-    #         return False
-    #     
-    #     return True
-    
     def validar_fecha_nacimiento(self, fecha_nacimiento):
         """
-        Valida una fecha de nacimiento.
+        Valida que la fecha de nacimiento sea válida.
         
         Args:
-            fecha_nacimiento (date): Fecha de nacimiento a validar
+            fecha_nacimiento (date): Fecha de nacimiento
         
         Returns:
             bool: True si la fecha es válida
@@ -97,112 +77,87 @@ class ClientesLogic:
         if not fecha_nacimiento:
             return True  # La fecha de nacimiento es opcional
         
-        # Verificar que no sea una fecha futura
+        # No permitir fechas futuras
         if fecha_nacimiento > date.today():
             return False
         
-        # Verificar que la persona tenga al menos 1 año
-        edad_minima = date.today().replace(year=date.today().year - 1)
-        if fecha_nacimiento > edad_minima:
-            return False
-        
-        # Verificar que la persona no tenga más de 120 años
-        edad_maxima = date.today().replace(year=date.today().year - 120)
-        if fecha_nacimiento < edad_maxima:
+        # No permitir fechas muy antiguas (más de 120 años)
+        fecha_minima = date.today().replace(year=date.today().year - 120)
+        if fecha_nacimiento < fecha_minima:
             return False
         
         return True
     
-    def agregar_cliente(self, nombre, apellido, telefono, email, fecha_nacimiento):
+    def obtener_clientes(self):
         """
-        Agrega un nuevo cliente con validaciones.
-        
-        Args:
-            nombre (str): Nombre del cliente
-            apellido (str): Apellido del cliente
-            telefono (str): Teléfono del cliente
-            email (str): Email del cliente
-            fecha_nacimiento (date): Fecha de nacimiento
-        
-        Returns:
-            int: ID del cliente creado o None si hay error
-        """
-        # Validaciones básicas
-        if not nombre or not nombre.strip():
-            st.error("El nombre es obligatorio.")
-            return None
-        
-        if not apellido or not apellido.strip():
-            st.error("El apellido es obligatorio.")
-            return None
-        
-        if not email or not email.strip():
-            st.error("El email es obligatorio.")
-            return None
-        
-        # Validar formato de email
-        if not self.validar_email(email):
-            st.error("El formato del email no es válido.")
-            return None
-        
-        # Validar teléfono
-        if not self.validar_telefono(telefono):
-            st.error("El formato del teléfono no es válido.")
-            return None
-        
-        # Validar fecha de nacimiento
-        if not self.validar_fecha_nacimiento(fecha_nacimiento):
-            st.error("La fecha de nacimiento no es válida.")
-            return None
-        
-        # Limpiar datos
-        nombre = nombre.strip()
-        apellido = apellido.strip()
-        email = email.strip().lower()
-        telefono = telefono.strip() if telefono else None
-        
-        # Verificar si el email ya existe
-        clientes_existentes = self.buscar_clientes_por_email(email)
-        if clientes_existentes:
-            st.error(f"Ya existe un cliente con el email '{email}'.")
-            return None
-        
-        # Insertar cliente
-        try:
-            cliente_id = insert_cliente_db(
-                self.conn, nombre, apellido, telefono, email, 
-                fecha_nacimiento
-            )
-            
-            if cliente_id:
-                st.success(f"Cliente '{nombre} {apellido}' agregado exitosamente con ID: {cliente_id}")
-                return cliente_id
-            else:
-                st.error("Error al agregar el cliente.")
-                return None
-                
-        except Exception as e:
-            st.error(f"Error inesperado al agregar cliente: {e}")
-            return None
-    
-    def obtener_clientes(self, solo_activos=False):
-        """
-        Obtiene la lista de clientes.
-        
-        Args:
-            solo_activos (bool): Si True, solo retorna clientes activos
+        Obtiene todos los clientes.
         
         Returns:
             list: Lista de clientes
         """
+        conn = None
         try:
-            if solo_activos:
-                return get_clientes_activos_db(self.conn)
-            else:
-                return get_clientes_db(self.conn)
-        except Exception as e:
-            st.error(f"Error al obtener clientes: {e}")
+            conn = get_db_connection()
+            if not conn:
+                return []
+            
+            cur = conn.cursor()
+            
+            # Consulta SQL directa para obtener clientes
+            cur.execute("""
+                SELECT id, nombre, apellido, telefono, email, fecha_nacimiento,
+                       estado, fecha_creacion, fecha_actualizacion
+                FROM clientes
+                ORDER BY apellido, nombre
+            """)
+            
+            clientes = cur.fetchall()
+            cur.close()
+            
+            return clientes
+            
+        except (Exception, psycopg2.DatabaseError) as error:
+            self._log_error(f"Error al obtener clientes: {error}")
             return []
+        finally:
+            if conn:
+                conn.close()
+    
+    def obtener_clientes_activos(self):
+        """
+        Obtiene solo los clientes activos.
+        
+        Returns:
+            list: Lista de clientes activos
+        """
+        conn = None
+        try:
+            conn = get_db_connection()
+            if not conn:
+                return []
+            
+            cur = conn.cursor()
+            
+            # Consulta SQL directa para obtener clientes activos
+            cur.execute("""
+                SELECT id, nombre, apellido, telefono, email, fecha_nacimiento,
+                       estado, fecha_creacion, fecha_actualizacion
+                FROM clientes
+                WHERE estado = 'Activo'
+                ORDER BY apellido, nombre
+            """)
+            
+            clientes = cur.fetchall()
+            cur.close()
+            
+            return clientes
+            
+        except (Exception, psycopg2.DatabaseError) as error:
+            self._log_error(f"Error al obtener clientes activos: {error}")
+            return []
+        finally:
+            if conn:
+                conn.close()
     
     def obtener_cliente_por_id(self, cliente_id):
         """
@@ -210,318 +165,321 @@ class ClientesLogic:
         
         Args:
             cliente_id (int): ID del cliente
-        
+            
         Returns:
-            dict: Datos del cliente o None si no existe
+            tuple or None: Datos del cliente o None si no se encuentra
         """
+        conn = None
         try:
-            return get_cliente_by_id_db(self.conn, cliente_id)
-        except Exception as e:
-            st.error(f"Error al obtener cliente: {e}")
+            conn = get_db_connection()
+            if not conn:
+                return None
+            
+            cur = conn.cursor()
+            
+            # Consulta SQL directa para obtener cliente por ID
+            cur.execute("""
+                SELECT id, nombre, apellido, telefono, email, fecha_nacimiento,
+                       estado, fecha_creacion, fecha_actualizacion
+                FROM clientes
+                WHERE id = %s
+            """, (cliente_id,))
+            
+            cliente = cur.fetchone()
+            cur.close()
+            
+            return cliente
+            
+        except (Exception, psycopg2.DatabaseError) as error:
+            self._log_error(f"Error al obtener cliente por ID: {error}")
             return None
+        finally:
+            if conn:
+                conn.close()
     
-    def actualizar_cliente(self, cliente_id, nombre, apellido, telefono, email, fecha_nacimiento, estado):
+    def crear_cliente(self, nombre, apellido, telefono, email, fecha_nacimiento=None):
         """
-        Actualiza los datos de un cliente con validaciones.
+        Crea un nuevo cliente.
         
         Args:
-            cliente_id (int): ID del cliente a actualizar
-            nombre (str): Nuevo nombre
-            apellido (str): Nuevo apellido
-            telefono (str): Nuevo teléfono
-            email (str): Nuevo email
-            fecha_nacimiento (date): Nueva fecha de nacimiento
-            estado (str): Estado del cliente (Activo/Inactivo)
-        
-        Returns:
-            bool: True si la actualización fue exitosa
-        """
-        # Validaciones básicas
-        if not nombre or not nombre.strip():
-            st.error("El nombre es obligatorio.")
-            return False
-        
-        if not apellido or not apellido.strip():
-            st.error("El apellido es obligatorio.")
-            return False
-        
-        if not email or not email.strip():
-            st.error("El email es obligatorio.")
-            return False
-        
-        # Validar formato de email
-        if not self.validar_email(email):
-            st.error("El formato del email no es válido.")
-            return False
-        
-        # Validar teléfono
-        if not self.validar_telefono(telefono):
-            st.error("El formato del teléfono no es válido.")
-            return False
-        
-        # Validar fecha de nacimiento
-        if not self.validar_fecha_nacimiento(fecha_nacimiento):
-            st.error("La fecha de nacimiento no es válida.")
-            return False
-        
-        # Limpiar datos
-        nombre = nombre.strip()
-        apellido = apellido.strip()
-        email = email.strip().lower()
-        telefono = telefono.strip() if telefono else None
-        
-        # Verificar si el email ya existe en otro cliente
-        clientes_existentes = self.buscar_clientes_por_email(email)
-        for cliente in clientes_existentes:
-            if cliente['id'] != cliente_id:
-                st.error(f"Ya existe otro cliente con el email '{email}'.")
-                return False
-        
-        # Actualizar cliente
-        try:
-            success = update_cliente_db(
-                self.conn, cliente_id, nombre, apellido, telefono, 
-                email, fecha_nacimiento, estado
-            )
+            nombre (str): Nombre del cliente
+            apellido (str): Apellido del cliente
+            telefono (str): Teléfono del cliente
+            email (str): Email del cliente
+            fecha_nacimiento (date, optional): Fecha de nacimiento
             
-            if success:
-                st.success(f"Cliente '{nombre} {apellido}' actualizado exitosamente.")
-                return True
-            else:
-                st.error("Error al actualizar el cliente.")
+        Returns:
+            int or None: ID del cliente creado o None si falla
+        """
+        conn = None
+        try:
+            # Validaciones
+            if not nombre or not apellido:
+                self._log_error("Nombre y apellido son obligatorios")
+                return None
+            
+            if not self.validar_email(email):
+                self._log_error("Email no válido")
+                return None
+            
+            if not self.validar_telefono(telefono):
+                self._log_error("Teléfono no válido")
+                return None
+            
+            if fecha_nacimiento and not self.validar_fecha_nacimiento(fecha_nacimiento):
+                self._log_error("Fecha de nacimiento no válida")
+                return None
+            
+            conn = get_db_connection()
+            if not conn:
+                return None
+            
+            cur = conn.cursor()
+            
+            # Llamada directa a la función SQL crear_cliente
+            cur.execute("""
+                SELECT crear_cliente(%s, %s, %s, %s, %s)
+            """, (nombre, apellido, telefono, email, fecha_nacimiento))
+            
+            cliente_id = cur.fetchone()[0]
+            conn.commit()
+            cur.close()
+            
+            return cliente_id
+            
+        except (Exception, psycopg2.DatabaseError) as error:
+            if conn:
+                conn.rollback()
+            self._log_error(f"Error al crear cliente: {error}")
+            return None
+        finally:
+            if conn:
+                conn.close()
+    
+    def actualizar_cliente(self, cliente_id, nombre, apellido, telefono, email, fecha_nacimiento=None, estado="Activo"):
+        """
+        Actualiza un cliente existente.
+        
+        Args:
+            cliente_id (int): ID del cliente
+            nombre (str): Nombre del cliente
+            apellido (str): Apellido del cliente
+            telefono (str): Teléfono del cliente
+            email (str): Email del cliente
+            fecha_nacimiento (date, optional): Fecha de nacimiento
+            estado (str): Estado del cliente
+            
+        Returns:
+            bool: True si se actualizó correctamente, False en caso contrario
+        """
+        conn = None
+        try:
+            # Validaciones
+            if not nombre or not apellido:
+                self._log_error("Nombre y apellido son obligatorios")
                 return False
-                
-        except Exception as e:
-            st.error(f"Error inesperado al actualizar cliente: {e}")
+            
+            if not self.validar_email(email):
+                self._log_error("Email no válido")
+                return False
+            
+            if not self.validar_telefono(telefono):
+                self._log_error("Teléfono no válido")
+                return False
+            
+            if fecha_nacimiento and not self.validar_fecha_nacimiento(fecha_nacimiento):
+                self._log_error("Fecha de nacimiento no válida")
+                return False
+            
+            conn = get_db_connection()
+            if not conn:
+                return False
+            
+            cur = conn.cursor()
+            
+            # Llamada directa a la función SQL actualizar_cliente
+            cur.execute("""
+                SELECT actualizar_cliente(%s, %s, %s, %s, %s, %s, %s)
+            """, (cliente_id, nombre, apellido, telefono, email, fecha_nacimiento, estado))
+            
+            resultado = cur.fetchone()[0]
+            conn.commit()
+            cur.close()
+            
+            return resultado
+            
+        except (Exception, psycopg2.DatabaseError) as error:
+            if conn:
+                conn.rollback()
+            self._log_error(f"Error al actualizar cliente: {error}")
             return False
+        finally:
+            if conn:
+                conn.close()
     
     def eliminar_cliente(self, cliente_id):
         """
         Elimina un cliente.
         
         Args:
-            cliente_id (int): ID del cliente a eliminar
-        
+            cliente_id (int): ID del cliente
+            
         Returns:
-            bool: True si la eliminación fue exitosa
+            bool: True si se eliminó correctamente, False en caso contrario
         """
+        conn = None
         try:
-            # Obtener información del cliente antes de eliminar
-            cliente = self.obtener_cliente_por_id(cliente_id)
-            if not cliente:
-                st.error("Cliente no encontrado.")
+            conn = get_db_connection()
+            if not conn:
                 return False
             
-            success = delete_cliente_db(self.conn, cliente_id)
+            cur = conn.cursor()
             
-            if success:
-                st.success(f"Cliente '{cliente['nombre']} {cliente['apellido']}' eliminado exitosamente.")
-                return True
-            else:
-                st.error("Error al eliminar el cliente.")
-                return False
-                
-        except Exception as e:
-            st.error(f"Error inesperado al eliminar cliente: {e}")
+            # Llamada directa a la función SQL eliminar_cliente
+            cur.execute("""
+                SELECT eliminar_cliente(%s)
+            """, (cliente_id,))
+            
+            resultado = cur.fetchone()[0]
+            conn.commit()
+            cur.close()
+            
+            return resultado
+            
+        except (Exception, psycopg2.DatabaseError) as error:
+            if conn:
+                conn.rollback()
+            self._log_error(f"Error al eliminar cliente: {error}")
             return False
+        finally:
+            if conn:
+                conn.close()
     
     def buscar_clientes(self, termino_busqueda):
         """
-        Busca clientes por nombre, apellido, email o documento.
+        Busca clientes por nombre, apellido o email.
         
         Args:
             termino_busqueda (str): Término de búsqueda
-        
+            
         Returns:
             list: Lista de clientes que coinciden con la búsqueda
         """
+        conn = None
         try:
-            if not termino_busqueda or not termino_busqueda.strip():
-                return self.obtener_clientes()
+            conn = get_db_connection()
+            if not conn:
+                return []
             
-            return search_clientes_db(self.conn, termino_busqueda.strip())
-        except Exception as e:
-            st.error(f"Error al buscar clientes: {e}")
+            cur = conn.cursor()
+            
+            # Consulta SQL directa para buscar clientes
+            cur.execute("""
+                SELECT id, nombre, apellido, telefono, email, fecha_nacimiento,
+                       estado, fecha_creacion, fecha_actualizacion
+                FROM clientes
+                WHERE LOWER(nombre) LIKE LOWER(%s) 
+                   OR LOWER(apellido) LIKE LOWER(%s)
+                   OR LOWER(email) LIKE LOWER(%s)
+                ORDER BY apellido, nombre
+            """, (f'%{termino_busqueda}%', f'%{termino_busqueda}%', f'%{termino_busqueda}%'))
+            
+            clientes = cur.fetchall()
+            cur.close()
+            
+            return clientes
+            
+        except (Exception, psycopg2.DatabaseError) as error:
+            self._log_error(f"Error al buscar clientes: {error}")
             return []
-    
-    def buscar_clientes_por_email(self, email):
-        """
-        Busca clientes por email específico.
-        
-        Args:
-            email (str): Email a buscar
-        
-        Returns:
-            list: Lista de clientes con ese email
-        """
-        try:
-            return search_clientes_db(self.conn, email)
-        except Exception as e:
-            st.error(f"Error al buscar clientes por email: {e}")
-            return []
-    
-    # def buscar_clientes_por_documento(self, documento):
-    #     """
-    #     Busca clientes por documento específico.
-    #     
-    #     Args:
-    #         documento (str): Documento a buscar
-    #     
-    #     Returns:
-    #         list: Lista de clientes con ese documento
-    #     """
-    #     try:
-    #         return search_clientes_db(self.conn, documento)
-    #     except Exception as e:
-    #         st.error(f"Error al buscar clientes por documento: {e}")
-    #         return []
+        finally:
+            if conn:
+                conn.close()
     
     def obtener_estadisticas_clientes(self):
         """
-        Obtiene estadísticas básicas de clientes.
+        Obtiene estadísticas de clientes.
         
         Returns:
             dict: Estadísticas de clientes
         """
+        conn = None
         try:
-            clientes = self.obtener_clientes()
-            clientes_activos = [c for c in clientes if c['estado'] == 'Activo']
+            conn = get_db_connection()
+            if not conn:
+                return {}
+            
+            cur = conn.cursor()
+            
+            # Consulta SQL directa para obtener estadísticas
+            cur.execute("""
+                SELECT 
+                    COUNT(*) as total_clientes,
+                    COUNT(CASE WHEN estado = 'Activo' THEN 1 END) as clientes_activos,
+                    COUNT(CASE WHEN estado = 'Inactivo' THEN 1 END) as clientes_inactivos,
+                    COUNT(CASE WHEN fecha_nacimiento IS NOT NULL THEN 1 END) as con_fecha_nacimiento,
+                    COUNT(CASE WHEN email IS NOT NULL AND email != '' THEN 1 END) as con_email,
+                    COUNT(CASE WHEN telefono IS NOT NULL AND telefono != '' THEN 1 END) as con_telefono
+                FROM clientes
+            """)
+            
+            stats = cur.fetchone()
+            cur.close()
             
             return {
-                'total_clientes': len(clientes),
-                'clientes_activos': len(clientes_activos),
-                'clientes_inactivos': len(clientes) - len(clientes_activos)
+                'total_clientes': stats[0],
+                'clientes_activos': stats[1],
+                'clientes_inactivos': stats[2],
+                'con_fecha_nacimiento': stats[3],
+                'con_email': stats[4],
+                'con_telefono': stats[5]
             }
-        except Exception as e:
-            st.error(f"Error al obtener estadísticas de clientes: {e}")
-            return {
-                'total_clientes': 0,
-                'clientes_activos': 0,
-                'clientes_inactivos': 0
-            }
-
-    def get_all_clientes(self):
-        """Obtener todos los clientes"""
+            
+        except (Exception, psycopg2.DatabaseError) as error:
+            self._log_error(f"Error al obtener estadísticas de clientes: {error}")
+            return {}
+        finally:
+            if conn:
+                conn.close()
+    
+    def obtener_reservas_activas_cliente(self, cliente_id):
+        """
+        Obtiene las reservas activas de un cliente específico.
+        
+        Args:
+            cliente_id (int): ID del cliente
+            
+        Returns:
+            list: Lista de reservas activas del cliente
+        """
+        conn = None
         try:
-            return self.obtener_clientes()
-        except Exception as e:
-            st.error(f"Error al obtener clientes: {e}")
+            conn = get_db_connection()
+            if not conn:
+                return []
+            
+            cur = conn.cursor()
+            
+            # Consulta SQL directa para obtener reservas activas del cliente
+            cur.execute("""
+                SELECT r.id, r.fecha_reserva, r.hora_inicio, r.hora_fin, r.duracion,
+                       r.observaciones, r.estado, r.fecha_creacion,
+                       ca.nombre as nombre_cancha, ca.tipo_deporte
+                FROM reservas r
+                JOIN canchas ca ON r.cancha_id = ca.id
+                WHERE r.cliente_id = %s 
+                AND r.estado IN ('pendiente', 'confirmada')
+                ORDER BY r.fecha_reserva DESC, r.hora_inicio DESC
+            """, (cliente_id,))
+            
+            reservas = cur.fetchall()
+            cur.close()
+            
+            return reservas
+            
+        except (Exception, psycopg2.DatabaseError) as error:
+            self._log_error(f"Error al obtener reservas activas del cliente: {error}")
             return []
-    
-    def get_cliente_by_id(self, cliente_id):
-        """Obtener cliente por ID"""
-        try:
-            return self.obtener_cliente_por_id(cliente_id)
-        except Exception as e:
-            st.error(f"Error al obtener cliente por ID: {e}")
-            return None
-    
-    def crear_cliente(self, datos_cliente):
-        """Crear nuevo cliente con datos completos"""
-        try:
-            return self.agregar_cliente(
-                nombre=datos_cliente['nombre'],
-                apellido=datos_cliente['apellido'],
-                telefono=datos_cliente.get('telefono', ''),
-                email=datos_cliente['email'],
-                fecha_nacimiento=datos_cliente.get('fecha_nacimiento')
-            )
-        except Exception as e:
-            st.error(f"Error al crear cliente: {e}")
-            return {'success': False, 'message': str(e)}
-    
-    def actualizar_cliente_completo(self, cliente_id, datos_actualizados):
-        """Actualizar cliente"""
-        try:
-            return self.actualizar_cliente(
-                cliente_id=cliente_id,
-                nombre=datos_actualizados['nombre'],
-                apellido=datos_actualizados['apellido'],
-                telefono=datos_actualizados.get('telefono', ''),
-                email=datos_actualizados['email'],
-                fecha_nacimiento=datos_actualizados.get('fecha_nacimiento'),
-                estado=datos_actualizados['estado']
-            )
-        except Exception as e:
-            st.error(f"Error al actualizar cliente: {e}")
-            return {'success': False, 'message': str(e)}
-    
-    def eliminar_cliente(self, cliente_id):
-        """Eliminar cliente"""
-        try:
-            return self.eliminar_cliente(cliente_id)
-        except Exception as e:
-            st.error(f"Error al eliminar cliente: {e}")
-            return {'success': False, 'message': str(e)}
-    
-    def get_clientes_filtrados(self, estado=None, search_term=None):
-        """Obtener clientes con filtros"""
-        try:
-            clientes = self.obtener_clientes()
-            
-            # Aplicar filtros
-            if estado:
-                clientes = [c for c in clientes if c['estado'] == estado]
-            
-            if search_term:
-                search_term = search_term.lower()
-                clientes = [c for c in clientes 
-                          if search_term in c['nombre'].lower() 
-                          or search_term in c['apellido'].lower()
-                          or search_term in c.get('email', '').lower()]
-            
-            return clientes
-            
-        except Exception as e:
-            st.error(f"Error al obtener clientes filtrados: {e}")
-            return []
-    
-    def get_actividad_clientes(self):
-        """Obtener actividad de clientes (número de reservas)"""
-        try:
-            from logica_negocio.reservas_logic import ReservasLogic
-            reservas_logic = ReservasLogic()
-            
-            clientes = self.obtener_clientes()
-            result = []
-            
-            for cliente in clientes:
-                # Obtener reservas del cliente
-                reservas_cliente = reservas_logic.obtener_reservas_por_cliente(cliente['id'])
-                
-                result.append({
-                    'nombre_completo': f"{cliente['nombre']} {cliente['apellido']}",
-                    'reservas_totales': len(reservas_cliente),
-                    'email': cliente.get('email', ''),
-                    'estado': cliente['estado']
-                })
-            
-            # Ordenar por número de reservas (descendente)
-            result.sort(key=lambda x: x['reservas_totales'], reverse=True)
-            
-            return result
-            
-        except Exception as e:
-            st.error(f"Error al obtener actividad de clientes: {e}")
-            return []
-    
-    def get_reservas_activas_cliente(self, cliente_id):
-        """Obtener reservas activas de un cliente"""
-        try:
-            from logica_negocio.reservas_logic import ReservasLogic
-            reservas_logic = ReservasLogic()
-            
-            reservas_cliente = reservas_logic.obtener_reservas_por_cliente(cliente_id)
-            
-            # Filtrar solo reservas activas (confirmadas o pendientes)
-            reservas_activas = [r for r in reservas_cliente 
-                              if r['estado'] in ['confirmada', 'pendiente']]
-            
-            return reservas_activas
-            
-        except Exception as e:
-            st.error(f"Error al obtener reservas activas del cliente: {e}")
-            return []
-
-# Instancia global de la lógica de clientes
-clientes_logic = ClientesLogic() 
+        finally:
+            if conn:
+                conn.close() 

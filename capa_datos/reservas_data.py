@@ -15,10 +15,10 @@ def crear_reserva_db(conn, cliente_id, cancha_id, fecha_reserva, hora_inicio, ho
         fecha_reserva (date): Fecha de la reserva
         hora_inicio (time): Hora de inicio
         hora_fin (time): Hora de fin
-        observaciones (str): Observaciones opcionales
+        observaciones (str, optional): Observaciones de la reserva
     
     Returns:
-        bool: True si la reserva se creó correctamente, False en caso contrario
+        int: ID de la reserva creada si fue exitosa, None en caso contrario
     """
     try:
         # Convertir objetos time a strings para PostgreSQL
@@ -31,33 +31,38 @@ def crear_reserva_db(conn, cliente_id, cancha_id, fecha_reserva, hora_inicio, ho
                                 hora_inicio_str, hora_fin_str, observaciones, 'pendiente'))
         
         if success:
-            # Obtener el ID de la reserva creada para auditoría
-            sql = """
-            SELECT id FROM reservas 
-            WHERE cliente_id = %s AND cancha_id = %s AND fecha_reserva = %s 
-            AND hora_inicio = %s AND hora_fin = %s
-            ORDER BY fecha_creacion DESC LIMIT 1
-            """
-            result = execute_query(conn, sql, (cliente_id, cancha_id, fecha_reserva, hora_inicio_str, hora_fin_str))
-            
-            if result:
-                reserva_id = result[0][0]
-                # Registrar en auditoría
-                registrar_accion_auditoria(conn, 'reservas', 'INSERT', reserva_id, 
-                                         f'Reserva creada: Cliente {cliente_id}, Cancha {cancha_id}, Fecha {fecha_reserva}')
-            
-            conn.commit()
-            st.success("✅ Reserva creada correctamente")
-            return True
+            # Obtener el ID de la reserva creada para auditoría usando cursor directamente
+            with conn.cursor() as cur:
+                # Buscar la reserva más reciente para este cliente y cancha
+                cur.execute("""
+                    SELECT id FROM reservas 
+                    WHERE cliente_id = %s AND cancha_id = %s 
+                    ORDER BY fecha_creacion DESC LIMIT 1
+                """, (cliente_id, cancha_id))
+                
+                result = cur.fetchone()
+                if result:
+                    reserva_id = result[0]
+                    # Registrar en auditoría
+                    registrar_accion_auditoria(conn, 1, 'INSERT', 'reservas', reserva_id, 
+                                             f'Reserva creada: Cliente {cliente_id}, Cancha {cancha_id}, Fecha {fecha_reserva}')
+                    
+                    conn.commit()
+                    st.success("✅ Reserva creada correctamente")
+                    return reserva_id
+                else:
+                    conn.rollback()
+                    st.error("❌ No se pudo obtener el ID de la reserva creada")
+                    return None
         else:
             conn.rollback()
             st.error("❌ Error al crear la reserva")
-            return False
+            return None
             
     except Exception as e:
         conn.rollback()
         st.error(f"Error al crear reserva: {e}")
-        return False
+        return None
 
 def get_reservas_db(conn):
     """
@@ -143,7 +148,7 @@ def actualizar_reserva_db(conn, reserva_id, cliente_id, cancha_id, fecha_reserva
         
         if success:
             # Registrar en auditoría
-            registrar_accion_auditoria(conn, 'reservas', 'UPDATE', reserva_id, 
+            registrar_accion_auditoria(conn, 1, 'UPDATE', 'reservas', reserva_id, 
                                      f'Reserva actualizada: ID {reserva_id}, Cliente {cliente_id}, Cancha {cancha_id}')
             
             conn.commit()
@@ -187,7 +192,7 @@ def cancelar_reserva_db(conn, reserva_id, cliente_id, cancha_id, fecha_reserva, 
         
         if success:
             # Registrar en auditoría
-            registrar_accion_auditoria(conn, 'reservas', 'UPDATE', reserva_id, 
+            registrar_accion_auditoria(conn, 1, 'UPDATE', 'reservas', reserva_id, 
                                      f'Reserva cancelada: ID {reserva_id}')
             
             conn.commit()
@@ -388,3 +393,51 @@ def verificar_disponibilidad_db(conn, cancha_id, fecha, hora_inicio, hora_fin, r
     except Exception as e:
         st.error(f"Error al verificar disponibilidad: {e}")
         return False 
+
+def get_reservas_paginadas_db(conn, pagina=1, registros_por_pagina=10):
+    """
+    Obtiene reservas con paginación usando LIMIT y OFFSET.
+    
+    Args:
+        conn: Conexión a la base de datos
+        pagina (int): Número de página (comienza en 1)
+        registros_por_pagina (int): Número de registros por página
+    
+    Returns:
+        tuple: (reservas, total_registros)
+    """
+    try:
+        # Calcular offset
+        offset = (pagina - 1) * registros_por_pagina
+        
+        # Obtener total de registros
+        sql_count = """
+        SELECT COUNT(*) FROM reservas
+        """
+        total_result = execute_query(conn, sql_count)
+        total_registros = total_result[0][0] if total_result else 0
+        
+        # Obtener reservas con paginación
+        sql = """
+        SELECT r.id, r.cliente_id, c.nombre as cliente_nombre, c.apellido as cliente_apellido,
+               r.cancha_id, ca.nombre as cancha_nombre, tc.nombre as tipo_cancha,
+               r.fecha_reserva, r.hora_inicio, r.hora_fin, 
+               r.duracion,
+               r.estado, r.observaciones,
+               ca.precio_hora, (ca.precio_hora * r.duracion) as precio_total,
+               r.fecha_creacion
+        FROM reservas r
+        JOIN clientes c ON r.cliente_id = c.id
+        JOIN canchas ca ON r.cancha_id = ca.id
+        JOIN tipos_cancha tc ON ca.tipo_cancha_id = tc.id
+        ORDER BY r.fecha_reserva DESC, r.hora_inicio DESC
+        LIMIT %s OFFSET %s
+        """
+        
+        reservas = execute_query_dict(conn, sql, (registros_por_pagina, offset))
+        
+        return reservas, total_registros
+        
+    except Exception as e:
+        st.error(f"Error al obtener reservas paginadas: {e}")
+        return [], 0 

@@ -1,13 +1,7 @@
 import streamlit as st
+import psycopg2
 from datetime import datetime, date, timedelta
-from capa_datos.reservas_data import (
-    crear_reserva_db, get_reservas_db, get_reserva_by_id_db,
-    actualizar_reserva_db, cancelar_reserva_db, get_reservas_por_fecha_db,
-    get_reservas_por_cliente_db, get_reservas_por_cancha_db, get_reservas_activas_db,
-    verificar_disponibilidad_db
-)
-from capa_datos.canchas_data import get_cancha_by_id_db
-from capa_datos.clientes_data import get_cliente_by_id_db
+from capa_datos.database_connection import get_db_connection
 
 class ReservasLogic:
     """
@@ -15,12 +9,23 @@ class ReservasLogic:
     """
     
     def __init__(self):
-        self.conn = st.session_state.get('db_connection')
         self.estados_reserva = ['pendiente', 'confirmada', 'cancelada', 'completada']
         self.hora_minima = datetime.strptime('06:00', '%H:%M').time()  # 6:00 AM
         self.hora_maxima = datetime.strptime('23:00', '%H:%M').time()  # 11:00 PM
         self.duracion_minima = 30  # minutos
         self.duracion_maxima = 240  # minutos (4 horas)
+    
+    def _log_error(self, message):
+        """
+        Registra un error de manera compatible con Streamlit y fuera de él.
+        
+        Args:
+            message (str): Mensaje de error
+        """
+        try:
+            st.error(message)
+        except:
+            print(f"ERROR: {message}")
     
     def validar_fecha_reserva(self, fecha_reserva):
         """
@@ -102,52 +107,122 @@ class ReservasLogic:
             fecha_reserva (date): Fecha de la reserva
             hora_inicio (time): Hora de inicio
             hora_fin (time): Hora de fin
-            observaciones (str): Observaciones opcionales
-        
-        Returns:
-            bool: True si se creó correctamente, False en caso contrario
-        """
-        try:
-            # Validar que la reserva no esté en el pasado
-            if fecha_reserva < date.today():
-                st.error("❌ No se pueden crear reservas en fechas pasadas")
-                return False
+            observaciones (str, optional): Observaciones de la reserva
             
-            # Validar que la hora de fin sea posterior a la de inicio
-            if hora_fin <= hora_inicio:
-                st.error("❌ La hora de fin debe ser posterior a la hora de inicio")
-                return False
+        Returns:
+            int or None: ID de la reserva creada o None si falla
+        """
+        conn = None
+        try:
+            # Validaciones
+            if not self.validar_fecha_reserva(fecha_reserva):
+                self._log_error("Fecha de reserva no válida")
+                return None
+            
+            if not self.validar_horario(hora_inicio, hora_fin):
+                self._log_error("Horario no válido")
+                return None
             
             # Verificar disponibilidad
-            if not verificar_disponibilidad_db(self.conn, cancha_id, fecha_reserva, hora_inicio, hora_fin):
-                st.error("❌ La cancha no está disponible en el horario especificado")
-                return False
+            if not self.verificar_disponibilidad(cancha_id, fecha_reserva, hora_inicio, hora_fin):
+                self._log_error("La cancha no está disponible en el horario seleccionado")
+                return None
             
-            # Crear la reserva usando el procedimiento almacenado
-            return crear_reserva_db(self.conn, cliente_id, cancha_id, fecha_reserva, hora_inicio, hora_fin, observaciones)
+            conn = get_db_connection()
+            if not conn:
+                return None
             
-        except Exception as e:
-            st.error(f"Error al crear reserva: {e}")
-            return False
+            cur = conn.cursor()
+            
+            # Llamada directa al procedimiento almacenado proc_gestionar_reserva
+            cur.execute("""
+                CALL proc_gestionar_reserva('INSERT', %s, %s, %s, %s, %s, %s, %s)
+            """, (cliente_id, cancha_id, fecha_reserva, hora_inicio, hora_fin, observaciones, 'pendiente'))
+            
+            # Obtener el ID de la reserva creada
+            cur.execute("""
+                SELECT id FROM reservas 
+                WHERE cliente_id = %s AND cancha_id = %s 
+                ORDER BY fecha_creacion DESC LIMIT 1
+            """, (cliente_id, cancha_id))
+            
+            resultado = cur.fetchone()
+            if resultado:
+                reserva_id = resultado[0]
+                conn.commit()
+                cur.close()
+                return reserva_id
+            else:
+                conn.rollback()
+                cur.close()
+                return None
+            
+        except (Exception, psycopg2.DatabaseError) as error:
+            if conn:
+                conn.rollback()
+            self._log_error(f"Error al crear reserva: {error}")
+            return None
+        finally:
+            if conn:
+                conn.close()
     
     def obtener_reservas(self, solo_activas=False):
         """
-        Obtiene la lista de reservas.
+        Obtiene todas las reservas.
         
         Args:
-            solo_activas (bool): Si True, solo retorna reservas activas
-        
+            solo_activas (bool): Si True, solo obtiene reservas activas
+            
         Returns:
             list: Lista de reservas
         """
+        conn = None
         try:
+            conn = get_db_connection()
+            if not conn:
+                return []
+            
+            cur = conn.cursor()
+            
             if solo_activas:
-                return get_reservas_activas_db(self.conn)
+                # Consulta SQL directa para reservas activas
+                cur.execute("""
+                    SELECT r.id, r.cliente_id, r.cancha_id, r.fecha_reserva, r.hora_inicio,
+                           r.hora_fin, r.duracion, r.observaciones, r.estado,
+                           r.fecha_creacion, r.fecha_actualizacion,
+                           c.nombre as nombre_cliente, c.apellido as apellido_cliente,
+                           ca.nombre as nombre_cancha
+                    FROM reservas r
+                    JOIN clientes c ON r.cliente_id = c.id
+                    JOIN canchas ca ON r.cancha_id = ca.id
+                    WHERE r.estado IN ('pendiente', 'confirmada')
+                    ORDER BY r.fecha_reserva DESC, r.hora_inicio DESC
+                """)
             else:
-                return get_reservas_db(self.conn)
-        except Exception as e:
-            st.error(f"Error al obtener reservas: {e}")
+                # Consulta SQL directa para todas las reservas
+                cur.execute("""
+                    SELECT r.id, r.cliente_id, r.cancha_id, r.fecha_reserva, r.hora_inicio,
+                           r.hora_fin, r.duracion, r.observaciones, r.estado,
+                           r.fecha_creacion, r.fecha_actualizacion,
+                           c.nombre as nombre_cliente, c.apellido as apellido_cliente,
+                           ca.nombre as nombre_cancha
+                    FROM reservas r
+                    JOIN clientes c ON r.cliente_id = c.id
+                    JOIN canchas ca ON r.cancha_id = ca.id
+                    ORDER BY r.fecha_reserva DESC, r.hora_inicio DESC
+                """)
+            
+            reservas = cur.fetchall()
+            cur.close()
+            
+            return reservas
+            
+        except (Exception, psycopg2.DatabaseError) as error:
+            self._log_error(f"Error al obtener reservas: {error}")
             return []
+        finally:
+            if conn:
+                conn.close()
     
     def obtener_reserva_por_id(self, reserva_id):
         """
@@ -155,169 +230,146 @@ class ReservasLogic:
         
         Args:
             reserva_id (int): ID de la reserva
-        
+            
         Returns:
-            dict: Datos de la reserva o None si no existe
+            tuple or None: Datos de la reserva o None si no se encuentra
         """
+        conn = None
         try:
-            return get_reserva_by_id_db(self.conn, reserva_id)
-        except Exception as e:
-            st.error(f"Error al obtener reserva: {e}")
+            conn = get_db_connection()
+            if not conn:
+                return None
+            
+            cur = conn.cursor()
+            
+            # Consulta SQL directa para obtener reserva por ID
+            cur.execute("""
+                SELECT r.id, r.cliente_id, r.cancha_id, r.fecha_reserva, r.hora_inicio,
+                       r.hora_fin, r.duracion, r.observaciones, r.estado,
+                       r.fecha_creacion, r.fecha_actualizacion,
+                       c.nombre as nombre_cliente, c.apellido as apellido_cliente,
+                       ca.nombre as nombre_cancha
+                FROM reservas r
+                JOIN clientes c ON r.cliente_id = c.id
+                JOIN canchas ca ON r.cancha_id = ca.id
+                WHERE r.id = %s
+            """, (reserva_id,))
+            
+            reserva = cur.fetchone()
+            cur.close()
+            
+            return reserva
+            
+        except (Exception, psycopg2.DatabaseError) as error:
+            self._log_error(f"Error al obtener reserva por ID: {error}")
             return None
+        finally:
+            if conn:
+                conn.close()
     
     def actualizar_reserva(self, reserva_id, cliente_id, cancha_id, fecha_reserva, hora_inicio, hora_fin, observaciones=None, estado='pendiente'):
         """
-        Actualiza una reserva existente usando el procedimiento almacenado.
+        Actualiza una reserva existente.
         
         Args:
-            reserva_id (int): ID de la reserva a actualizar
+            reserva_id (int): ID de la reserva
             cliente_id (int): ID del cliente
             cancha_id (int): ID de la cancha
             fecha_reserva (date): Fecha de la reserva
             hora_inicio (time): Hora de inicio
             hora_fin (time): Hora de fin
-            observaciones (str): Observaciones opcionales
+            observaciones (str, optional): Observaciones
             estado (str): Estado de la reserva
-        
+            
         Returns:
             bool: True si se actualizó correctamente, False en caso contrario
         """
+        conn = None
         try:
-            # Validar que la reserva existe
-            reserva_actual = get_reserva_by_id_db(self.conn, reserva_id)
-            if not reserva_actual:
-                st.error("❌ La reserva especificada no existe")
+            # Validaciones
+            if not self.validar_fecha_reserva(fecha_reserva):
+                self._log_error("Fecha de reserva no válida")
                 return False
             
-            # Validar que la hora de fin sea posterior a la de inicio
-            if hora_fin <= hora_inicio:
-                st.error("❌ La hora de fin debe ser posterior a la hora de inicio")
+            if not self.validar_horario(hora_inicio, hora_fin):
+                self._log_error("Horario no válido")
+                return False
+            
+            if not self.validar_estado_reserva(estado):
+                self._log_error("Estado de reserva no válido")
                 return False
             
             # Verificar disponibilidad (excluyendo la reserva actual)
-            if not verificar_disponibilidad_db(self.conn, cancha_id, fecha_reserva, hora_inicio, hora_fin, reserva_id):
-                st.error("❌ La cancha no está disponible en el horario especificado")
+            if not self.verificar_disponibilidad(cancha_id, fecha_reserva, hora_inicio, hora_fin, reserva_id):
+                self._log_error("La cancha no está disponible en el horario seleccionado")
                 return False
             
-            # Actualizar la reserva usando el procedimiento almacenado
-            return actualizar_reserva_db(self.conn, reserva_id, cliente_id, cancha_id, fecha_reserva, hora_inicio, hora_fin, observaciones, estado)
+            conn = get_db_connection()
+            if not conn:
+                return False
             
-        except Exception as e:
-            st.error(f"Error al actualizar reserva: {e}")
+            cur = conn.cursor()
+            
+            # Llamada directa al procedimiento almacenado proc_gestionar_reserva
+            cur.execute("""
+                CALL proc_gestionar_reserva('UPDATE', %s, %s, %s, %s, %s, %s, %s)
+            """, (cliente_id, cancha_id, fecha_reserva, hora_inicio, hora_fin, observaciones, estado))
+            
+            conn.commit()
+            cur.close()
+            
+            return True
+            
+        except (Exception, psycopg2.DatabaseError) as error:
+            if conn:
+                conn.rollback()
+            self._log_error(f"Error al actualizar reserva: {error}")
             return False
+        finally:
+            if conn:
+                conn.close()
     
     def cancelar_reserva(self, reserva_id, cliente_id, cancha_id, fecha_reserva, hora_inicio, hora_fin):
         """
-        Cancela una reserva usando el procedimiento almacenado.
+        Cancela una reserva.
         
         Args:
-            reserva_id (int): ID de la reserva a cancelar
+            reserva_id (int): ID de la reserva
             cliente_id (int): ID del cliente
             cancha_id (int): ID de la cancha
             fecha_reserva (date): Fecha de la reserva
             hora_inicio (time): Hora de inicio
             hora_fin (time): Hora de fin
-        
+            
         Returns:
             bool: True si se canceló correctamente, False en caso contrario
         """
+        conn = None
         try:
-            # Validar que la reserva existe
-            reserva = get_reserva_by_id_db(self.conn, reserva_id)
-            if not reserva:
-                st.error("❌ La reserva especificada no existe")
+            conn = get_db_connection()
+            if not conn:
                 return False
             
-            # Validar que la reserva no esté ya cancelada
-            if reserva['estado'] == 'cancelada':
-                st.warning("⚠️ La reserva ya está cancelada")
-                return True
+            cur = conn.cursor()
             
-            # Cancelar la reserva usando el procedimiento almacenado
-            return cancelar_reserva_db(self.conn, reserva_id, cliente_id, cancha_id, fecha_reserva, hora_inicio, hora_fin)
+            # Llamada directa al procedimiento almacenado proc_gestionar_reserva
+            cur.execute("""
+                CALL proc_gestionar_reserva('DELETE', %s, %s, %s, %s, %s, 'Reserva cancelada', 'cancelada')
+            """, (cliente_id, cancha_id, fecha_reserva, hora_inicio, hora_fin))
             
-        except Exception as e:
-            st.error(f"Error al cancelar reserva: {e}")
+            conn.commit()
+            cur.close()
+            
+            return True
+            
+        except (Exception, psycopg2.DatabaseError) as error:
+            if conn:
+                conn.rollback()
+            self._log_error(f"Error al cancelar reserva: {error}")
             return False
-    
-    def obtener_reservas_por_fecha(self, fecha):
-        """
-        Obtiene las reservas para una fecha específica.
-        
-        Args:
-            fecha (date): Fecha para filtrar
-        
-        Returns:
-            list: Lista de reservas para esa fecha
-        """
-        try:
-            return get_reservas_por_fecha_db(self.conn, fecha)
-        except Exception as e:
-            st.error(f"Error al obtener reservas por fecha: {e}")
-            return []
-    
-    def obtener_reservas_por_cliente(self, cliente_id):
-        """
-        Obtiene todas las reservas de un cliente específico.
-        
-        Args:
-            cliente_id (int): ID del cliente
-        
-        Returns:
-            list: Lista de reservas del cliente
-        """
-        try:
-            return get_reservas_por_cliente_db(self.conn, cliente_id)
-        except Exception as e:
-            st.error(f"Error al obtener reservas por cliente: {e}")
-            return []
-    
-    def obtener_reservas_por_cancha(self, cancha_id):
-        """
-        Obtiene todas las reservas de una cancha específica.
-        
-        Args:
-            cancha_id (int): ID de la cancha
-        
-        Returns:
-            list: Lista de reservas de la cancha
-        """
-        try:
-            return get_reservas_por_cancha_db(self.conn, cancha_id)
-        except Exception as e:
-            st.error(f"Error al obtener reservas por cancha: {e}")
-            return []
-    
-    def obtener_reservas_por_estado(self, estado):
-        """
-        Obtiene todas las reservas de un estado específico.
-        
-        Args:
-            estado (str): Estado de las reservas a filtrar
-        
-        Returns:
-            list: Lista de reservas del estado especificado
-        """
-        try:
-            # Obtener todas las reservas y filtrar por estado
-            reservas = get_reservas_db(self.conn)
-            return [r for r in reservas if r['estado'].lower() == estado.lower()]
-        except Exception as e:
-            st.error(f"Error al obtener reservas por estado: {e}")
-            return []
-    
-    def obtener_todas_las_reservas(self):
-        """
-        Obtiene todas las reservas sin filtros.
-        
-        Returns:
-            list: Lista de todas las reservas
-        """
-        try:
-            return get_reservas_db(self.conn)
-        except Exception as e:
-            st.error(f"Error al obtener todas las reservas: {e}")
-            return []
+        finally:
+            if conn:
+                conn.close()
     
     def verificar_disponibilidad(self, cancha_id, fecha, hora_inicio, hora_fin, reserva_id_excluir=None):
         """
@@ -328,299 +380,175 @@ class ReservasLogic:
             fecha (date): Fecha de la reserva
             hora_inicio (time): Hora de inicio
             hora_fin (time): Hora de fin
-            reserva_id_excluir (int): ID de reserva a excluir (para actualizaciones)
-        
+            reserva_id_excluir (int, optional): ID de reserva a excluir (para actualizaciones)
+            
         Returns:
-            bool: True si está disponible, False si hay conflicto
+            bool: True si está disponible, False en caso contrario
         """
+        conn = None
         try:
-            return verificar_disponibilidad_db(self.conn, cancha_id, fecha, hora_inicio, hora_fin, reserva_id_excluir)
-        except Exception as e:
-            st.error(f"Error al verificar disponibilidad: {e}")
+            conn = get_db_connection()
+            if not conn:
+                return False
+            
+            cur = conn.cursor()
+            
+            if reserva_id_excluir:
+                # Consulta SQL directa excluyendo una reserva específica
+                cur.execute("""
+                    SELECT COUNT(*) FROM reservas 
+                    WHERE cancha_id = %s 
+                    AND fecha_reserva = %s 
+                    AND estado IN ('pendiente', 'confirmada')
+                    AND id != %s
+                    AND (
+                        (hora_inicio < %s AND hora_fin > %s) OR
+                        (hora_inicio < %s AND hora_fin > %s) OR
+                        (hora_inicio >= %s AND hora_fin <= %s)
+                    )
+                """, (cancha_id, fecha, reserva_id_excluir, hora_fin, hora_inicio, hora_fin, hora_inicio, hora_inicio, hora_fin))
+            else:
+                # Consulta SQL directa para verificar disponibilidad
+                cur.execute("""
+                    SELECT COUNT(*) FROM reservas 
+                    WHERE cancha_id = %s 
+                    AND fecha_reserva = %s 
+                    AND estado IN ('pendiente', 'confirmada')
+                    AND (
+                        (hora_inicio < %s AND hora_fin > %s) OR
+                        (hora_inicio < %s AND hora_fin > %s) OR
+                        (hora_inicio >= %s AND hora_fin <= %s)
+                    )
+                """, (cancha_id, fecha, hora_fin, hora_inicio, hora_fin, hora_inicio, hora_inicio, hora_fin))
+            
+            count = cur.fetchone()[0]
+            cur.close()
+            
+            return count == 0
+            
+        except (Exception, psycopg2.DatabaseError) as error:
+            self._log_error(f"Error al verificar disponibilidad: {error}")
             return False
-    
-    def limpiar_reservas_antiguas(self, fecha_corte):
-        """
-        Ejecuta el procedimiento para limpiar reservas antiguas.
-        
-        Args:
-            fecha_corte (date): Fecha de corte para eliminar reservas
-        
-        Returns:
-            bool: True si el procedimiento se ejecutó correctamente
-        """
-        try:
-            # Este procedimiento no está definido en capa_datos.reservas_data,
-            # por lo que se asume que se ejecuta directamente o se maneja en capa_datos.
-            # Si se necesita una lógica de limpieza más compleja, se debe implementar aquí.
-            st.warning("La limpieza de reservas antiguas no está implementada en capa_datos.")
-            return False
-        except Exception as e:
-            st.error(f"Error inesperado al limpiar reservas antiguas: {e}")
-            return False
+        finally:
+            if conn:
+                conn.close()
     
     def obtener_estadisticas_reservas(self, fecha_inicio=None, fecha_fin=None):
         """
-        Obtiene estadísticas básicas de reservas.
+        Obtiene estadísticas de reservas.
         
         Args:
-            fecha_inicio (date): Fecha de inicio (opcional)
-            fecha_fin (date): Fecha de fin (opcional)
-        
+            fecha_inicio (date, optional): Fecha de inicio para el filtro
+            fecha_fin (date, optional): Fecha de fin para el filtro
+            
         Returns:
             dict: Estadísticas de reservas
         """
+        conn = None
         try:
-            reservas = self.obtener_reservas()
+            conn = get_db_connection()
+            if not conn:
+                return {}
             
-            # Filtrar por fecha si se especifica
+            cur = conn.cursor()
+            
             if fecha_inicio and fecha_fin:
-                reservas = [r for r in reservas if fecha_inicio <= r['fecha_reserva'] <= fecha_fin]
+                # Consulta SQL directa con filtro de fechas
+                cur.execute("""
+                    SELECT 
+                        COUNT(*) as total_reservas,
+                        COUNT(CASE WHEN estado = 'confirmada' THEN 1 END) as reservas_confirmadas,
+                        COUNT(CASE WHEN estado = 'pendiente' THEN 1 END) as reservas_pendientes,
+                        COUNT(CASE WHEN estado = 'cancelada' THEN 1 END) as reservas_canceladas,
+                        COUNT(CASE WHEN estado = 'completada' THEN 1 END) as reservas_completadas,
+                        AVG(duracion) as duracion_promedio,
+                        SUM(duracion) as duracion_total
+                    FROM reservas
+                    WHERE fecha_reserva BETWEEN %s AND %s
+                """, (fecha_inicio, fecha_fin))
+            else:
+                # Consulta SQL directa sin filtro de fechas
+                cur.execute("""
+                    SELECT 
+                        COUNT(*) as total_reservas,
+                        COUNT(CASE WHEN estado = 'confirmada' THEN 1 END) as reservas_confirmadas,
+                        COUNT(CASE WHEN estado = 'pendiente' THEN 1 END) as reservas_pendientes,
+                        COUNT(CASE WHEN estado = 'cancelada' THEN 1 END) as reservas_canceladas,
+                        COUNT(CASE WHEN estado = 'completada' THEN 1 END) as reservas_completadas,
+                        AVG(duracion) as duracion_promedio,
+                        SUM(duracion) as duracion_total
+                    FROM reservas
+                """)
             
-            # Contar por estado
-            estados_count = {}
-            total_ingresos = 0
-            
-            for reserva in reservas:
-                estado = reserva['estado']
-                estados_count[estado] = estados_count.get(estado, 0) + 1
-                
-                if reserva.get('precio_total_calculado'):
-                    total_ingresos += float(reserva['precio_total_calculado'])
+            stats = cur.fetchone()
+            cur.close()
             
             return {
-                'total_reservas': len(reservas),
-                'por_estado': estados_count,
-                'total_ingresos': total_ingresos,
-                'promedio_por_reserva': total_ingresos / len(reservas) if reservas else 0
+                'total_reservas': stats[0],
+                'reservas_confirmadas': stats[1],
+                'reservas_pendientes': stats[2],
+                'reservas_canceladas': stats[3],
+                'reservas_completadas': stats[4],
+                'duracion_promedio': float(stats[5]) if stats[5] else 0,
+                'duracion_total': float(stats[6]) if stats[6] else 0
             }
-        except Exception as e:
-            st.error(f"Error al obtener estadísticas de reservas: {e}")
-            return {
-                'total_reservas': 0,
-                'por_estado': {},
-                'total_ingresos': 0,
-                'promedio_por_reserva': 0
-            }
+            
+        except (Exception, psycopg2.DatabaseError) as error:
+            self._log_error(f"Error al obtener estadísticas de reservas: {error}")
+            return {}
+        finally:
+            if conn:
+                conn.close()
     
-    def obtener_horarios_disponibles(self, cancha_id, fecha):
+    def obtener_reservas_paginadas(self, pagina=1, registros_por_pagina=10):
         """
-        Obtiene los horarios disponibles para una cancha en una fecha específica.
+        Obtiene reservas con paginación.
         
         Args:
-            cancha_id (int): ID de la cancha
-            fecha (date): Fecha para verificar
-        
+            pagina (int): Número de página
+            registros_por_pagina (int): Registros por página
+            
         Returns:
-            list: Lista de horarios disponibles
+            tuple: (reservas, total_registros)
         """
+        conn = None
         try:
-            # Obtener reservas existentes para esa fecha y cancha
-            reservas_fecha = self.obtener_reservas_por_fecha(fecha)
-            reservas_cancha = [r for r in reservas_fecha if r['cancha_id'] == cancha_id and r['estado'] in ['confirmada', 'pendiente']]
+            conn = get_db_connection()
+            if not conn:
+                return [], 0
             
-            # Generar horarios disponibles (cada 30 minutos)
-            horarios_disponibles = []
-            hora_actual = self.hora_minima
+            cur = conn.cursor()
             
-            while hora_actual < self.hora_maxima:
-                hora_fin = datetime.strptime(f"{hora_actual.hour}:{hora_actual.minute + 30}", '%H:%M').time()
-                if hora_fin.minute >= 60:
-                    hora_fin = datetime.strptime(f"{hora_actual.hour + 1}:{hora_fin.minute - 60}", '%H:%M').time()
-                
-                # Verificar si este horario está disponible
-                disponible = True
-                for reserva in reservas_cancha:
-                    if (reserva['hora_inicio'] < hora_fin and reserva['hora_fin'] > hora_actual):
-                        disponible = False
-                        break
-                
-                if disponible:
-                    horarios_disponibles.append({
-                        'hora_inicio': hora_actual,
-                        'hora_fin': hora_fin
-                    })
-                
-                hora_actual = hora_fin
+            # Calcular offset
+            offset = (pagina - 1) * registros_por_pagina
             
-            return horarios_disponibles
+            # Consulta SQL directa con paginación
+            cur.execute("""
+                SELECT r.id, r.cliente_id, r.cancha_id, r.fecha_reserva, r.hora_inicio,
+                       r.hora_fin, r.duracion, r.observaciones, r.estado,
+                       r.fecha_creacion, r.fecha_actualizacion,
+                       c.nombre as nombre_cliente, c.apellido as apellido_cliente,
+                       ca.nombre as nombre_cancha
+                FROM reservas r
+                JOIN clientes c ON r.cliente_id = c.id
+                JOIN canchas ca ON r.cancha_id = ca.id
+                ORDER BY r.fecha_reserva DESC, r.hora_inicio DESC
+                LIMIT %s OFFSET %s
+            """, (registros_por_pagina, offset))
             
-        except Exception as e:
-            st.error(f"Error al obtener horarios disponibles: {e}")
-            return []
-
-    def get_reservas_por_estado(self):
-        """Obtener reservas agrupadas por estado"""
-        try:
-            reservas = self.obtener_reservas()
+            reservas = cur.fetchall()
             
-            # Agrupar por estado
-            estados_count = {}
-            for reserva in reservas:
-                estado = reserva['estado']
-                estados_count[estado] = estados_count.get(estado, 0) + 1
+            # Obtener total de registros
+            cur.execute("SELECT COUNT(*) FROM reservas")
+            total_registros = cur.fetchone()[0]
             
-            # Convertir a formato de lista para el dashboard
-            result = []
-            for estado, cantidad in estados_count.items():
-                result.append({
-                    'estado': estado.capitalize(),
-                    'cantidad': cantidad
-                })
+            cur.close()
             
-            return result
+            return reservas, total_registros
             
-        except Exception as e:
-            st.error(f"Error al obtener reservas por estado: {e}")
-            return []
-    
-    def get_ocupacion_por_cancha(self):
-        """Obtener ocupación de canchas en los últimos 30 días"""
-        try:
-            from logica_negocio.canchas_logic import CanchasLogic
-            canchas_logic = CanchasLogic()
-            canchas = canchas_logic.get_all_canchas()
-            
-            fecha_inicio = datetime.now().date() - timedelta(days=30)
-            fecha_fin = datetime.now().date()
-            
-            result = []
-            for cancha in canchas:
-                # Obtener reservas para esta cancha en el período
-                reservas_cancha = self.obtener_reservas_por_cancha(cancha['id'])
-                reservas_periodo = [r for r in reservas_cancha 
-                                  if fecha_inicio <= r['fecha_reserva'] <= fecha_fin]
-                
-                result.append({
-                    'nombre_cancha': cancha['nombre'],
-                    'tipo_deporte': cancha['tipo_deporte'],
-                    'reservas_totales': len(reservas_periodo)
-                })
-            
-            return result
-            
-        except Exception as e:
-            st.error(f"Error al obtener ocupación por cancha: {e}")
-            return []
-    
-    def get_reservas_recientes(self, limit=10):
-        """Obtener reservas recientes"""
-        try:
-            reservas = self.obtener_reservas()
-            
-            # Ordenar por fecha de creación (más recientes primero)
-            reservas_ordenadas = sorted(reservas, 
-                                      key=lambda x: x.get('fecha_creacion', ''), 
-                                      reverse=True)
-            
-            # Limitar resultados
-            return reservas_ordenadas[:limit]
-            
-        except Exception as e:
-            st.error(f"Error al obtener reservas recientes: {e}")
-            return []
-    
-    def get_reservas_filtradas(self, fecha_inicio=None, fecha_fin=None, estado=None):
-        """Obtener reservas con filtros"""
-        try:
-            reservas = self.obtener_reservas()
-            
-            # Aplicar filtros
-            if fecha_inicio and fecha_fin:
-                reservas = [r for r in reservas 
-                          if fecha_inicio <= r['fecha_reserva'] <= fecha_fin]
-            
-            if estado:
-                reservas = [r for r in reservas if r['estado'] == estado.lower()]
-            
-            return reservas
-            
-        except Exception as e:
-            st.error(f"Error al obtener reservas filtradas: {e}")
-            return []
-    
-    def get_reserva_by_id(self, reserva_id):
-        """Obtener reserva por ID"""
-        try:
-            return self.obtener_reserva_por_id(reserva_id)
-        except Exception as e:
-            st.error(f"Error al obtener reserva por ID: {e}")
-            return None
-    
-    def get_reservas_pendientes_pago(self):
-        """Obtener reservas pendientes de pago"""
-        try:
-            # Obtener todas las reservas
-            reservas = self.obtener_reservas()
-            
-            # Filtrar reservas confirmadas que no tienen pagos completos
-            reservas_pendientes = []
-            for reserva in reservas:
-                if reserva['estado'] in ['confirmada', 'pendiente']:
-                    # Verificar si la reserva tiene pagos completos
-                    # Por ahora, asumimos que todas las reservas confirmadas están pendientes de pago
-                    # En una implementación más completa, se verificaría contra la tabla de pagos
-                    reservas_pendientes.append(reserva)
-            
-            return reservas_pendientes
-            
-        except Exception as e:
-            st.error(f"Error al obtener reservas pendientes de pago: {e}")
-            return []
-    
-    def crear_reserva_completa(self, datos_reserva):
-        """Crear nueva reserva con datos completos"""
-        try:
-            return self.crear_reserva(
-                cliente_id=datos_reserva['cliente_id'],
-                cancha_id=datos_reserva['cancha_id'],
-                fecha_reserva=datos_reserva['fecha_reserva'],
-                hora_inicio=datos_reserva['hora_inicio'],
-                hora_fin=datos_reserva['hora_fin'],
-                observaciones=datos_reserva.get('observaciones')
-            )
-        except Exception as e:
-            st.error(f"Error al crear reserva: {e}")
-            return {'success': False, 'message': str(e)}
-    
-    def actualizar_reserva_completa(self, reserva_id, datos_actualizados):
-        """Actualizar reserva con datos completos"""
-        try:
-            return self.actualizar_reserva(
-                reserva_id=reserva_id,
-                cliente_id=datos_actualizados['cliente_id'],
-                cancha_id=datos_actualizados['cancha_id'],
-                fecha_reserva=datos_actualizados['fecha_reserva'],
-                hora_inicio=datos_actualizados['hora_inicio'],
-                hora_fin=datos_actualizados['hora_fin'],
-                observaciones=datos_actualizados.get('observaciones', ''),
-                estado=datos_actualizados.get('estado', 'pendiente')
-            )
-        except Exception as e:
-            st.error(f"Error al actualizar reserva: {e}")
-            return {'success': False, 'message': str(e)}
-    
-    def cancelar_reserva_completa(self, reserva_id, motivo_cancelacion):
-        """Cancelar reserva con motivo"""
-        try:
-            # Para cancelar, necesitamos el cliente_id, cancha_id, fecha_reserva, hora_inicio, hora_fin
-            # Esto requiere obtener la reserva actual para extraer estos datos.
-            reserva_actual = self.obtener_reserva_por_id(reserva_id)
-            if not reserva_actual:
-                st.error("❌ La reserva especificada no existe")
-                return {'success': False, 'message': "Reserva no encontrada"}
-
-            return self.cancelar_reserva(
-                reserva_id=reserva_id,
-                cliente_id=reserva_actual['cliente_id'],
-                cancha_id=reserva_actual['cancha_id'],
-                fecha_reserva=reserva_actual['fecha_reserva'],
-                hora_inicio=reserva_actual['hora_inicio'],
-                hora_fin=reserva_actual['hora_fin']
-            )
-        except Exception as e:
-            st.error(f"Error al cancelar reserva: {e}")
-            return {'success': False, 'message': str(e)}
-
-# Instancia global de la lógica de reservas
-reservas_logic = ReservasLogic() 
+        except (Exception, psycopg2.DatabaseError) as error:
+            self._log_error(f"Error al obtener reservas paginadas: {error}")
+            return [], 0
+        finally:
+            if conn:
+                conn.close() 

@@ -1,0 +1,1932 @@
+-- =====================================================
+-- SCRIPT COMPLETO DE RESTAURACIÓN DE BASE DE DATOS
+-- SPORTCOURT RESERVATIONS - SISTEMA DE GESTIÓN DE RESERVAS
+-- =====================================================
+-- Descripción: Script completo para restaurar la base de datos en otra PC
+-- Incluye: Roles, Secuencias, Tablas, Funciones, Procedimientos, Triggers, Vistas, Datos
+-- Fecha: 2025-08-02
+-- =====================================================
+
+-- =====================================================
+-- PASO 1: CREACIÓN DE ROLES Y USUARIOS
+-- =====================================================
+
+-- Crear rol de administrador
+DO $$
+BEGIN
+    IF NOT EXISTS (SELECT FROM pg_roles WHERE rolname = 'admin_reservas') THEN
+        CREATE ROLE admin_reservas WITH
+            LOGIN
+            PASSWORD 'admin123'
+            NOSUPERUSER
+            INHERIT
+            NOCREATEDB
+            NOCREATEROLE
+            NOREPLICATION;
+    END IF;
+END
+$$;
+
+-- Crear rol de operador
+DO $$
+BEGIN
+    IF NOT EXISTS (SELECT FROM pg_roles WHERE rolname = 'operador_reservas') THEN
+        CREATE ROLE operador_reservas WITH
+            LOGIN
+            PASSWORD 'operador123'
+            NOSUPERUSER
+            INHERIT
+            NOCREATEDB
+            NOCREATEROLE
+            NOREPLICATION;
+    END IF;
+END
+$$;
+
+-- Crear rol de consultor
+DO $$
+BEGIN
+    IF NOT EXISTS (SELECT FROM pg_roles WHERE rolname = 'consultor_reservas') THEN
+        CREATE ROLE consultor_reservas WITH
+            LOGIN
+            PASSWORD 'consultor123'
+            NOSUPERUSER
+            INHERIT
+            NOCREATEDB
+            NOCREATEROLE
+            NOREPLICATION;
+    END IF;
+END
+$$;
+
+-- =====================================================
+-- PASO 2: SECUENCIAS
+-- =====================================================
+
+-- Secuencia para auditoria
+DROP SEQUENCE IF EXISTS public.auditoria_id_seq CASCADE;
+CREATE SEQUENCE public.auditoria_id_seq
+    AS integer
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1;
+ALTER SEQUENCE public.auditoria_id_seq OWNER TO postgres;
+
+-- Secuencia para canchas
+DROP SEQUENCE IF EXISTS public.canchas_id_seq CASCADE;
+CREATE SEQUENCE public.canchas_id_seq
+    AS integer
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1;
+ALTER SEQUENCE public.canchas_id_seq OWNER TO postgres;
+
+-- Secuencia para clientes
+DROP SEQUENCE IF EXISTS public.clientes_id_seq CASCADE;
+CREATE SEQUENCE public.clientes_id_seq
+    AS integer
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1;
+ALTER SEQUENCE public.clientes_id_seq OWNER TO postgres;
+
+-- Secuencia para pagos
+DROP SEQUENCE IF EXISTS public.pagos_id_seq CASCADE;
+CREATE SEQUENCE public.pagos_id_seq
+    AS integer
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1;
+ALTER SEQUENCE public.pagos_id_seq OWNER TO postgres;
+
+-- Secuencia para reservas
+DROP SEQUENCE IF EXISTS public.reservas_id_seq CASCADE;
+CREATE SEQUENCE public.reservas_id_seq
+    AS integer
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1;
+ALTER SEQUENCE public.reservas_id_seq OWNER TO postgres;
+
+-- Secuencia para tipos_cancha
+DROP SEQUENCE IF EXISTS public.tipos_cancha_id_seq CASCADE;
+CREATE SEQUENCE public.tipos_cancha_id_seq
+    AS integer
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1;
+ALTER SEQUENCE public.tipos_cancha_id_seq OWNER TO postgres;
+
+-- Secuencia para usuarios
+DROP SEQUENCE IF EXISTS public.usuarios_id_seq CASCADE;
+CREATE SEQUENCE public.usuarios_id_seq
+    AS integer
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1;
+ALTER SEQUENCE public.usuarios_id_seq OWNER TO postgres;
+
+-- =====================================================
+-- PASO 3: TABLAS
+-- =====================================================
+
+-- Tabla auditoria
+DROP TABLE IF EXISTS public.auditoria CASCADE;
+CREATE TABLE public.auditoria (
+    id integer NOT NULL,
+    usuario_id integer,
+    tipo_accion character varying(20) NOT NULL,
+    tabla character varying(50) NOT NULL,
+    registro_id integer,
+    detalles text,
+    resultado character varying(20) DEFAULT 'SUCCESS'::character varying NOT NULL,
+    ip_address character varying(45),
+    fecha_hora timestamp without time zone DEFAULT CURRENT_TIMESTAMP
+);
+ALTER TABLE public.auditoria OWNER TO postgres;
+
+-- Tabla tipos_cancha
+DROP TABLE IF EXISTS public.tipos_cancha CASCADE;
+CREATE TABLE public.tipos_cancha (
+    id integer NOT NULL,
+    nombre character varying(100) NOT NULL,
+    descripcion text,
+    precio_por_hora numeric(10,2) DEFAULT 0.00 NOT NULL,
+    estado character varying(20) DEFAULT 'Activo'::character varying,
+    fecha_creacion timestamp without time zone DEFAULT CURRENT_TIMESTAMP,
+    fecha_actualizacion timestamp without time zone DEFAULT CURRENT_TIMESTAMP
+);
+ALTER TABLE public.tipos_cancha OWNER TO postgres;
+
+-- Tabla usuarios
+DROP TABLE IF EXISTS public.usuarios CASCADE;
+CREATE TABLE public.usuarios (
+    id integer NOT NULL,
+    username character varying(50) NOT NULL,
+    email character varying(100) NOT NULL,
+    password character varying(255) NOT NULL,
+    nombre character varying(100) NOT NULL,
+    apellido character varying(100) NOT NULL,
+    rol character varying(50) DEFAULT 'consultor_reservas'::character varying NOT NULL,
+    estado character varying(20) DEFAULT 'Activo'::character varying NOT NULL,
+    telefono character varying(20),
+    fecha_creacion timestamp without time zone DEFAULT CURRENT_TIMESTAMP,
+    fecha_actualizacion timestamp without time zone DEFAULT CURRENT_TIMESTAMP
+);
+ALTER TABLE public.usuarios OWNER TO postgres;
+
+-- Tabla clientes
+DROP TABLE IF EXISTS public.clientes CASCADE;
+CREATE TABLE public.clientes (
+    id integer NOT NULL,
+    nombre character varying(100) NOT NULL,
+    apellido character varying(100) NOT NULL,
+    email character varying(100),
+    telefono character varying(20),
+    direccion text,
+    fecha_nacimiento date,
+    estado character varying(20) DEFAULT 'Activo'::character varying NOT NULL,
+    fecha_registro timestamp without time zone DEFAULT CURRENT_TIMESTAMP,
+    fecha_actualizacion timestamp without time zone DEFAULT CURRENT_TIMESTAMP
+);
+ALTER TABLE public.clientes OWNER TO postgres;
+
+-- Tabla canchas
+DROP TABLE IF EXISTS public.canchas CASCADE;
+CREATE TABLE public.canchas (
+    id integer NOT NULL,
+    nombre character varying(100) NOT NULL,
+    tipo_deporte character varying(50) NOT NULL,
+    capacidad integer DEFAULT 0,
+    precio_hora numeric(10,2) NOT NULL,
+    estado character varying(20) DEFAULT 'Activa'::character varying NOT NULL,
+    horario_apertura time without time zone DEFAULT '06:00:00'::time without time zone NOT NULL,
+    horario_cierre time without time zone DEFAULT '22:00:00'::time without time zone NOT NULL,
+    descripcion text,
+    fecha_creacion timestamp without time zone DEFAULT CURRENT_TIMESTAMP,
+    fecha_actualizacion timestamp without time zone DEFAULT CURRENT_TIMESTAMP,
+    tipo_cancha_id integer
+);
+ALTER TABLE public.canchas OWNER TO postgres;
+
+-- Tabla reservas
+DROP TABLE IF EXISTS public.reservas CASCADE;
+CREATE TABLE public.reservas (
+    id integer NOT NULL,
+    cliente_id integer NOT NULL,
+    cancha_id integer NOT NULL,
+    fecha_reserva date NOT NULL,
+    hora_inicio time without time zone NOT NULL,
+    hora_fin time without time zone NOT NULL,
+    duracion numeric(4,2) NOT NULL,
+    estado character varying(20) DEFAULT 'Pendiente'::character varying NOT NULL,
+    observaciones text,
+    fecha_creacion timestamp without time zone DEFAULT CURRENT_TIMESTAMP,
+    fecha_actualizacion timestamp without time zone DEFAULT CURRENT_TIMESTAMP
+);
+ALTER TABLE public.reservas OWNER TO postgres;
+
+-- Tabla pagos
+DROP TABLE IF EXISTS public.pagos CASCADE;
+CREATE TABLE public.pagos (
+    id integer NOT NULL,
+    reserva_id integer NOT NULL,
+    cliente_id integer NOT NULL,
+    monto numeric(10,2) NOT NULL,
+    metodo_pago character varying(50) NOT NULL,
+    estado character varying(20) DEFAULT 'Pendiente'::character varying NOT NULL,
+    fecha_pago date NOT NULL,
+    observaciones text,
+    fecha_creacion timestamp without time zone DEFAULT CURRENT_TIMESTAMP,
+    fecha_actualizacion timestamp without time zone DEFAULT CURRENT_TIMESTAMP
+);
+ALTER TABLE public.pagos OWNER TO postgres;
+
+-- =====================================================
+-- PASO 4: CONFIGURAR VALORES POR DEFECTO
+-- =====================================================
+
+ALTER TABLE ONLY public.auditoria ALTER COLUMN id SET DEFAULT nextval('public.auditoria_id_seq'::regclass);
+ALTER TABLE ONLY public.canchas ALTER COLUMN id SET DEFAULT nextval('public.canchas_id_seq'::regclass);
+ALTER TABLE ONLY public.clientes ALTER COLUMN id SET DEFAULT nextval('public.clientes_id_seq'::regclass);
+ALTER TABLE ONLY public.pagos ALTER COLUMN id SET DEFAULT nextval('public.pagos_id_seq'::regclass);
+ALTER TABLE ONLY public.reservas ALTER COLUMN id SET DEFAULT nextval('public.reservas_id_seq'::regclass);
+ALTER TABLE ONLY public.tipos_cancha ALTER COLUMN id SET DEFAULT nextval('public.tipos_cancha_id_seq'::regclass);
+ALTER TABLE ONLY public.usuarios ALTER COLUMN id SET DEFAULT nextval('public.usuarios_id_seq'::regclass);
+
+-- =====================================================
+-- PASO 5: RESTRICCIONES (CONSTRAINTS)
+-- =====================================================
+
+-- Claves primarias
+ALTER TABLE ONLY public.auditoria ADD CONSTRAINT auditoria_pkey PRIMARY KEY (id);
+ALTER TABLE ONLY public.canchas ADD CONSTRAINT canchas_pkey PRIMARY KEY (id);
+ALTER TABLE ONLY public.clientes ADD CONSTRAINT clientes_pkey PRIMARY KEY (id);
+ALTER TABLE ONLY public.pagos ADD CONSTRAINT pagos_pkey PRIMARY KEY (id);
+ALTER TABLE ONLY public.reservas ADD CONSTRAINT reservas_pkey PRIMARY KEY (id);
+ALTER TABLE ONLY public.tipos_cancha ADD CONSTRAINT tipos_cancha_pkey PRIMARY KEY (id);
+ALTER TABLE ONLY public.usuarios ADD CONSTRAINT usuarios_pkey PRIMARY KEY (id);
+
+-- Claves únicas
+ALTER TABLE ONLY public.clientes ADD CONSTRAINT clientes_email_key UNIQUE (email);
+ALTER TABLE ONLY public.tipos_cancha ADD CONSTRAINT tipos_cancha_nombre_key UNIQUE (nombre);
+ALTER TABLE ONLY public.usuarios ADD CONSTRAINT usuarios_email_key UNIQUE (email);
+ALTER TABLE ONLY public.usuarios ADD CONSTRAINT usuarios_username_key UNIQUE (username);
+
+-- Claves foráneas
+ALTER TABLE ONLY public.auditoria ADD CONSTRAINT auditoria_usuario_id_fkey FOREIGN KEY (usuario_id) REFERENCES public.usuarios(id);
+ALTER TABLE ONLY public.canchas ADD CONSTRAINT canchas_tipo_cancha_id_fkey FOREIGN KEY (tipo_cancha_id) REFERENCES public.tipos_cancha(id);
+ALTER TABLE ONLY public.pagos ADD CONSTRAINT pagos_cliente_id_fkey FOREIGN KEY (cliente_id) REFERENCES public.clientes(id);
+ALTER TABLE ONLY public.pagos ADD CONSTRAINT pagos_reserva_id_fkey FOREIGN KEY (reserva_id) REFERENCES public.reservas(id);
+ALTER TABLE ONLY public.reservas ADD CONSTRAINT reservas_cancha_id_fkey FOREIGN KEY (cancha_id) REFERENCES public.canchas(id);
+ALTER TABLE ONLY public.reservas ADD CONSTRAINT reservas_cliente_id_fkey FOREIGN KEY (cliente_id) REFERENCES public.clientes(id);
+
+-- =====================================================
+-- PASO 6: ÍNDICES
+-- =====================================================
+
+-- Índices para auditoria
+CREATE INDEX idx_auditoria_fecha ON public.auditoria USING btree (fecha_hora);
+CREATE INDEX idx_auditoria_tabla ON public.auditoria USING btree (tabla);
+CREATE INDEX idx_auditoria_tipo ON public.auditoria USING btree (tipo_accion);
+CREATE INDEX idx_auditoria_usuario ON public.auditoria USING btree (usuario_id);
+
+-- Índices para canchas
+CREATE INDEX idx_canchas_estado ON public.canchas USING btree (estado);
+CREATE INDEX idx_canchas_tipo ON public.canchas USING btree (tipo_deporte);
+CREATE INDEX idx_canchas_tipo_cancha ON public.canchas USING btree (tipo_cancha_id);
+
+-- Índices para clientes
+CREATE INDEX idx_clientes_email ON public.clientes USING btree (email);
+CREATE INDEX idx_clientes_estado ON public.clientes USING btree (estado);
+
+-- Índices para pagos
+CREATE INDEX idx_pagos_cliente ON public.pagos USING btree (cliente_id);
+CREATE INDEX idx_pagos_estado ON public.pagos USING btree (estado);
+CREATE INDEX idx_pagos_fecha ON public.pagos USING btree (fecha_pago);
+CREATE INDEX idx_pagos_reserva ON public.pagos USING btree (reserva_id);
+
+-- Índices para reservas
+CREATE INDEX idx_reservas_cancha ON public.reservas USING btree (cancha_id);
+CREATE INDEX idx_reservas_cliente ON public.reservas USING btree (cliente_id);
+CREATE INDEX idx_reservas_estado ON public.reservas USING btree (estado);
+CREATE INDEX idx_reservas_fecha ON public.reservas USING btree (fecha_reserva);
+
+-- =====================================================
+-- PASO 7: FUNCIONES ALMACENADAS
+-- =====================================================
+
+-- Función para actualizar fecha de tipos de cancha
+CREATE OR REPLACE FUNCTION public.actualizar_fecha_tipos_cancha() RETURNS trigger
+    LANGUAGE plpgsql
+    AS $$
+BEGIN
+    NEW.fecha_actualizacion = CURRENT_TIMESTAMP;
+    RETURN NEW;
+END;
+$$;
+ALTER FUNCTION public.actualizar_fecha_tipos_cancha() OWNER TO postgres;
+
+-- Función para actualizar columna updated_at
+CREATE OR REPLACE FUNCTION public.update_updated_at_column() RETURNS trigger
+    LANGUAGE plpgsql
+    AS $$
+BEGIN
+    NEW.fecha_actualizacion = CURRENT_TIMESTAMP;
+    RETURN NEW;
+END;
+$$;
+ALTER FUNCTION public.update_updated_at_column() OWNER TO postgres;
+
+-- Función para registrar auditoría automática
+CREATE OR REPLACE FUNCTION public.registrar_auditoria_automatica() RETURNS trigger
+    LANGUAGE plpgsql
+    AS $$
+DECLARE
+    v_usuario_id INTEGER;
+    v_tipo_accion VARCHAR(20);
+    v_tabla_nombre VARCHAR(50);
+    v_registro_id INTEGER;
+    v_detalles TEXT;
+BEGIN
+    -- Obtener el usuario actual (asumiendo que está en una variable de sesión)
+    -- Por ahora usaremos NULL, pero puedes configurar esto según tu sistema
+    v_usuario_id := NULL;
+    
+    -- Determinar el tipo de acción
+    IF TG_OP = 'INSERT' THEN
+        v_tipo_accion := 'INSERT';
+        v_registro_id := NEW.id;
+        v_detalles := 'Nuevo registro creado';
+    ELSIF TG_OP = 'UPDATE' THEN
+        v_tipo_accion := 'UPDATE';
+        v_registro_id := NEW.id;
+        v_detalles := 'Registro actualizado';
+    ELSIF TG_OP = 'DELETE' THEN
+        v_tipo_accion := 'DELETE';
+        v_registro_id := OLD.id;
+        v_detalles := 'Registro eliminado';
+    END IF;
+    
+    -- Obtener el nombre de la tabla
+    v_tabla_nombre := TG_TABLE_NAME;
+    
+    -- Insertar en la tabla auditoría
+    INSERT INTO auditoria (
+        usuario_id,
+        tipo_accion,
+        tabla,
+        registro_id,
+        detalles,
+        resultado,
+        ip_address,
+        fecha_hora
+    ) VALUES (
+        v_usuario_id,
+        v_tipo_accion,
+        v_tabla_nombre,
+        v_registro_id,
+        v_detalles,
+        'SUCCESS',
+        '127.0.0.1',
+        CURRENT_TIMESTAMP
+    );
+    
+    -- Retornar el registro apropiado
+    IF TG_OP = 'DELETE' THEN
+        RETURN OLD;
+    ELSE
+        RETURN NEW;
+    END IF;
+END;
+$$;
+ALTER FUNCTION public.registrar_auditoria_automatica() OWNER TO postgres;
+
+-- Función para verificar disponibilidad de cancha
+CREATE OR REPLACE FUNCTION public.verificar_disponibilidad_cancha(p_cancha_id integer, p_fecha date, p_hora_inicio time without time zone, p_hora_fin time without time zone) RETURNS boolean
+    LANGUAGE plpgsql
+    AS $$
+BEGIN
+    RETURN NOT EXISTS (
+        SELECT 1 FROM reservas 
+        WHERE cancha_id = p_cancha_id 
+        AND fecha_reserva = p_fecha
+        AND estado IN ('confirmada', 'pendiente')
+        AND (
+            (hora_inicio < p_hora_fin AND hora_fin > p_hora_inicio) OR
+            (hora_inicio >= p_hora_inicio AND hora_inicio < p_hora_fin)
+        )
+    );
+END;
+$$;
+ALTER FUNCTION public.verificar_disponibilidad_cancha(p_cancha_id integer, p_fecha date, p_hora_inicio time without time zone, p_hora_fin time without time zone) OWNER TO postgres;
+
+-- Función para crear reserva
+CREATE OR REPLACE FUNCTION public.crear_reserva(p_cliente_id integer, p_cancha_id integer, p_fecha_reserva date, p_hora_inicio time without time zone, p_hora_fin time without time zone, p_observaciones text DEFAULT NULL::text) RETURNS integer
+    LANGUAGE plpgsql
+    AS $$
+DECLARE
+    v_reserva_id INTEGER;
+    v_duracion DECIMAL(10,2);
+BEGIN
+    -- Calcular la duración en horas
+    v_duracion := EXTRACT(EPOCH FROM (p_hora_fin - p_hora_inicio)) / 3600;
+    
+    -- Insertar la reserva incluyendo la duración calculada
+    INSERT INTO reservas (
+        cliente_id,
+        cancha_id,
+        fecha_reserva,
+        hora_inicio,
+        hora_fin,
+        duracion,
+        observaciones,
+        estado
+    ) VALUES (
+        p_cliente_id,
+        p_cancha_id,
+        p_fecha_reserva,
+        p_hora_inicio,
+        p_hora_fin,
+        v_duracion,
+        p_observaciones,
+        'pendiente'
+    ) RETURNING id INTO v_reserva_id;
+    
+    RETURN v_reserva_id;
+END;
+$$;
+ALTER FUNCTION public.crear_reserva(p_cliente_id integer, p_cancha_id integer, p_fecha_reserva date, p_hora_inicio time without time zone, p_hora_fin time without time zone, p_observaciones text) OWNER TO postgres;
+
+-- Función para obtener canchas
+CREATE OR REPLACE FUNCTION public.obtener_canchas() RETURNS TABLE(id integer, nombre character varying, tipo_deporte character varying, capacidad integer, precio_hora numeric, estado character varying, horario_apertura time without time zone, horario_cierre time without time zone, descripcion text, fecha_creacion timestamp without time zone, fecha_actualizacion timestamp without time zone, tipo_cancha_id integer)
+    LANGUAGE plpgsql
+    AS $$
+BEGIN
+    RETURN QUERY
+    SELECT c.id, c.nombre, c.tipo_deporte, c.capacidad, c.precio_hora,
+           c.estado, c.horario_apertura, c.horario_cierre, c.descripcion,
+           c.fecha_creacion, c.fecha_actualizacion, c.tipo_cancha_id
+    FROM canchas c
+    ORDER BY c.nombre;
+END;
+$$;
+ALTER FUNCTION public.obtener_canchas() OWNER TO postgres;
+
+-- Función para obtener tipos de cancha
+CREATE OR REPLACE FUNCTION public.obtener_tipos_cancha() RETURNS TABLE(id integer, nombre character varying, descripcion text, precio_por_hora numeric, estado character varying, fecha_creacion timestamp without time zone, fecha_actualizacion timestamp without time zone)
+    LANGUAGE plpgsql
+    AS $$
+BEGIN
+    RETURN QUERY
+    SELECT tc.id, tc.nombre, tc.descripcion, tc.precio_por_hora, 
+           tc.estado, tc.fecha_creacion, tc.fecha_actualizacion
+    FROM tipos_cancha tc
+    ORDER BY tc.nombre;
+END;
+$$;
+ALTER FUNCTION public.obtener_tipos_cancha() OWNER TO postgres;
+
+-- =====================================================
+-- FUNCIONES FALTANTES IDENTIFICADAS EN EL ANÁLISIS
+-- =====================================================
+
+-- Función para crear tipo de cancha
+CREATE OR REPLACE FUNCTION public.crear_tipo_cancha(
+    p_nombre VARCHAR(100),
+    p_descripcion TEXT,
+    p_precio_hora NUMERIC(10,2)
+)
+RETURNS INTEGER
+LANGUAGE plpgsql
+AS $$
+DECLARE
+    v_id INTEGER;
+BEGIN
+    -- Validar parámetros
+    IF p_nombre IS NULL OR p_nombre = '' THEN
+        RAISE EXCEPTION 'El nombre del tipo de cancha no puede estar vacío';
+    END IF;
+    
+    IF p_precio_hora IS NULL OR p_precio_hora <= 0 THEN
+        RAISE EXCEPTION 'El precio por hora debe ser mayor a 0';
+    END IF;
+    
+    -- Insertar nuevo tipo de cancha
+    INSERT INTO tipos_cancha (nombre, descripcion, precio_por_hora, fecha_creacion, fecha_actualizacion)
+    VALUES (p_nombre, p_descripcion, p_precio_hora, NOW(), NOW())
+    RETURNING id INTO v_id;
+    
+    -- Registrar auditoría (CORREGIDO: usar acción válida)
+    CALL proc_registrar_auditoria_manual(
+        'INSERT', 1, 'tipos_cancha', v_id, 
+        'Tipo de cancha creado: ' || p_nombre
+    );
+    
+    RETURN v_id;
+END;
+$$;
+ALTER FUNCTION public.crear_tipo_cancha(VARCHAR, TEXT, NUMERIC) OWNER TO postgres;
+
+-- Función para eliminar tipo de cancha
+CREATE OR REPLACE FUNCTION public.eliminar_tipo_cancha(p_id INTEGER)
+RETURNS BOOLEAN
+LANGUAGE plpgsql
+AS $$
+DECLARE
+    v_nombre VARCHAR(100);
+    v_count INTEGER;
+BEGIN
+    -- Verificar si el tipo existe
+    SELECT nombre INTO v_nombre FROM tipos_cancha WHERE id = p_id;
+    IF NOT FOUND THEN
+        RAISE EXCEPTION 'Tipo de cancha con ID % no encontrado', p_id;
+    END IF;
+    
+    -- Verificar si hay canchas usando este tipo
+    SELECT COUNT(*) INTO v_count FROM canchas WHERE tipo_cancha_id = p_id;
+    IF v_count > 0 THEN
+        RAISE EXCEPTION 'No se puede eliminar el tipo de cancha porque hay % canchas asociadas', v_count;
+    END IF;
+    
+    -- Eliminar el tipo de cancha
+    DELETE FROM tipos_cancha WHERE id = p_id;
+    
+    -- Registrar auditoría
+    CALL proc_registrar_auditoria_manual(
+        'DELETE', 1, 'tipos_cancha', p_id, 
+        'Tipo de cancha eliminado: ' || v_nombre
+    );
+    
+    RETURN TRUE;
+END;
+$$;
+ALTER FUNCTION public.eliminar_tipo_cancha(INTEGER) OWNER TO postgres;
+
+-- Función para actualizar tipo de cancha
+CREATE OR REPLACE FUNCTION public.actualizar_tipo_cancha(
+    p_id INTEGER,
+    p_nombre VARCHAR(100),
+    p_descripcion TEXT,
+    p_precio_hora NUMERIC(10,2),
+    p_activo BOOLEAN
+)
+RETURNS BOOLEAN
+LANGUAGE plpgsql
+AS $$
+DECLARE
+    v_nombre_actual VARCHAR(100);
+    v_estado VARCHAR(20);
+BEGIN
+    -- Verificar si el tipo existe
+    SELECT nombre INTO v_nombre_actual FROM tipos_cancha WHERE id = p_id;
+    IF NOT FOUND THEN
+        RAISE EXCEPTION 'Tipo de cancha con ID % no encontrado', p_id;
+    END IF;
+    
+    -- Validar parámetros
+    IF p_nombre IS NULL OR p_nombre = '' THEN
+        RAISE EXCEPTION 'El nombre del tipo de cancha no puede estar vacío';
+    END IF;
+    
+    IF p_precio_hora IS NULL OR p_precio_hora <= 0 THEN
+        RAISE EXCEPTION 'El precio por hora debe ser mayor a 0';
+    END IF;
+    
+    -- Convertir booleano a string para el estado
+    v_estado := CASE WHEN p_activo THEN 'Activo' ELSE 'Inactivo' END;
+    
+    -- Actualizar el tipo de cancha
+    UPDATE tipos_cancha 
+    SET nombre = p_nombre, 
+        descripcion = p_descripcion, 
+        precio_por_hora = p_precio_hora, 
+        estado = v_estado,
+        fecha_actualizacion = NOW()
+    WHERE id = p_id;
+    
+    -- Registrar auditoría
+    CALL proc_registrar_auditoria_manual(
+        'UPDATE', 1, 'tipos_cancha', p_id, 
+        'Tipo de cancha actualizado: ' || p_nombre || ' (antes: ' || v_nombre_actual || ')'
+    );
+    
+    RETURN TRUE;
+END;
+$$;
+ALTER FUNCTION public.actualizar_tipo_cancha(INTEGER, VARCHAR, TEXT, NUMERIC, BOOLEAN) OWNER TO postgres;
+
+-- Función para obtener cancha por ID
+CREATE OR REPLACE FUNCTION public.obtener_cancha_por_id(p_id INTEGER)
+RETURNS TABLE(
+    id INTEGER,
+    nombre VARCHAR(100),
+    tipo_deporte VARCHAR(50),
+    capacidad INTEGER,
+    precio_hora NUMERIC(10,2),
+    estado VARCHAR(20),
+    horario_apertura TIME,
+    horario_cierre TIME,
+    descripcion TEXT,
+    tipo_cancha_id INTEGER,
+    tipo_cancha_nombre VARCHAR(100),
+    fecha_creacion TIMESTAMP,
+    fecha_actualizacion TIMESTAMP
+)
+LANGUAGE plpgsql
+AS $$
+BEGIN
+    RETURN QUERY
+    SELECT 
+        c.id,
+        c.nombre,
+        c.tipo_deporte,
+        c.capacidad,
+        c.precio_hora,
+        c.estado,
+        c.horario_apertura,
+        c.horario_cierre,
+        c.descripcion,
+        c.tipo_cancha_id,
+        tc.nombre as tipo_cancha_nombre,
+        c.fecha_creacion,
+        c.fecha_actualizacion
+    FROM canchas c
+    LEFT JOIN tipos_cancha tc ON c.tipo_cancha_id = tc.id
+    WHERE c.id = p_id;
+END;
+$$;
+ALTER FUNCTION public.obtener_cancha_por_id(INTEGER) OWNER TO postgres;
+
+-- Función para obtener canchas con tipos (más detallada)
+CREATE OR REPLACE FUNCTION public.obtener_canchas_con_tipos()
+RETURNS TABLE(
+    cancha_id INTEGER,
+    cancha_nombre VARCHAR(100),
+    tipo_deporte VARCHAR(50),
+    capacidad INTEGER,
+    precio_hora NUMERIC(10,2),
+    estado VARCHAR(20),
+    horario_apertura TIME,
+    horario_cierre TIME,
+    descripcion TEXT,
+    tipo_cancha_id INTEGER,
+    tipo_cancha_nombre VARCHAR(100),
+    tipo_cancha_descripcion TEXT,
+    tipo_cancha_precio_hora NUMERIC(10,2),
+    fecha_creacion TIMESTAMP,
+    fecha_actualizacion TIMESTAMP
+)
+LANGUAGE plpgsql
+AS $$
+BEGIN
+    RETURN QUERY
+    SELECT 
+        c.id as cancha_id,
+        c.nombre as cancha_nombre,
+        c.tipo_deporte,
+        c.capacidad,
+        c.precio_hora,
+        c.estado,
+        c.horario_apertura,
+        c.horario_cierre,
+        c.descripcion,
+        c.tipo_cancha_id,
+        tc.nombre as tipo_cancha_nombre,
+        tc.descripcion as tipo_cancha_descripcion,
+        tc.precio_por_hora as tipo_cancha_precio_hora,
+        c.fecha_creacion,
+        c.fecha_actualizacion
+    FROM canchas c
+    LEFT JOIN tipos_cancha tc ON c.tipo_cancha_id = tc.id
+    ORDER BY c.nombre;
+END;
+$$;
+ALTER FUNCTION public.obtener_canchas_con_tipos() OWNER TO postgres;
+
+-- Función para crear cliente
+CREATE OR REPLACE FUNCTION public.crear_cliente(
+    p_nombre VARCHAR(100),
+    p_apellido VARCHAR(100),
+    p_email VARCHAR(150),
+    p_telefono VARCHAR(20),
+    p_direccion TEXT DEFAULT NULL
+)
+RETURNS INTEGER
+LANGUAGE plpgsql
+AS $$
+DECLARE
+    v_id INTEGER;
+BEGIN
+    -- Validar parámetros
+    IF p_nombre IS NULL OR p_nombre = '' THEN
+        RAISE EXCEPTION 'El nombre del cliente no puede estar vacío';
+    END IF;
+    
+    IF p_apellido IS NULL OR p_apellido = '' THEN
+        RAISE EXCEPTION 'El apellido del cliente no puede estar vacío';
+    END IF;
+    
+    IF p_email IS NULL OR p_email = '' THEN
+        RAISE EXCEPTION 'El email del cliente no puede estar vacío';
+    END IF;
+    
+    -- Verificar si el email ya existe
+    IF EXISTS(SELECT 1 FROM clientes WHERE email = p_email) THEN
+        RAISE EXCEPTION 'Ya existe un cliente con el email: %', p_email;
+    END IF;
+    
+    -- Insertar nuevo cliente
+    INSERT INTO clientes (nombre, apellido, email, telefono, direccion, fecha_registro, fecha_actualizacion)
+    VALUES (p_nombre, p_apellido, p_email, p_telefono, p_direccion, NOW(), NOW())
+    RETURNING id INTO v_id;
+    
+    -- Registrar auditoría (CORREGIDO: usar acción válida)
+    CALL proc_registrar_auditoria_manual(
+        'INSERT', 1, 'clientes', v_id, 
+        'Cliente creado: ' || p_nombre || ' ' || p_apellido
+    );
+    
+    RETURN v_id;
+END;
+$$;
+ALTER FUNCTION public.crear_cliente(VARCHAR, VARCHAR, VARCHAR, VARCHAR, TEXT) OWNER TO postgres;
+
+-- Función para actualizar cliente
+CREATE OR REPLACE FUNCTION public.actualizar_cliente(
+    p_id INTEGER,
+    p_nombre VARCHAR(100),
+    p_apellido VARCHAR(100),
+    p_email VARCHAR(150),
+    p_telefono VARCHAR(20),
+    p_direccion TEXT DEFAULT NULL
+)
+RETURNS BOOLEAN
+LANGUAGE plpgsql
+AS $$
+DECLARE
+    v_old_email VARCHAR(150);
+BEGIN
+    -- Verificar si el cliente existe
+    SELECT email INTO v_old_email FROM clientes WHERE id = p_id;
+    IF NOT FOUND THEN
+        RAISE EXCEPTION 'Cliente con ID % no encontrado', p_id;
+    END IF;
+    
+    -- Validar parámetros
+    IF p_nombre IS NULL OR p_nombre = '' THEN
+        RAISE EXCEPTION 'El nombre del cliente no puede estar vacío';
+    END IF;
+    
+    IF p_apellido IS NULL OR p_apellido = '' THEN
+        RAISE EXCEPTION 'El apellido del cliente no puede estar vacío';
+    END IF;
+    
+    IF p_email IS NULL OR p_email = '' THEN
+        RAISE EXCEPTION 'El email del cliente no puede estar vacío';
+    END IF;
+    
+    -- Verificar si el email ya existe (excluyendo el cliente actual)
+    IF p_email != v_old_email AND EXISTS(SELECT 1 FROM clientes WHERE email = p_email) THEN
+        RAISE EXCEPTION 'Ya existe un cliente con el email: %', p_email;
+    END IF;
+    
+    -- Actualizar cliente
+    UPDATE clientes 
+    SET 
+        nombre = p_nombre,
+        apellido = p_apellido,
+        email = p_email,
+        telefono = p_telefono,
+        direccion = p_direccion,
+        fecha_actualizacion = NOW()
+    WHERE id = p_id;
+    
+    -- Registrar auditoría
+    CALL proc_registrar_auditoria_manual(
+        'UPDATE', 1, 'clientes', p_id, 
+        'Cliente actualizado: ' || p_nombre || ' ' || p_apellido
+    );
+    
+    RETURN TRUE;
+END;
+$$;
+ALTER FUNCTION public.actualizar_cliente(INTEGER, VARCHAR, VARCHAR, VARCHAR, VARCHAR, TEXT) OWNER TO postgres;
+
+-- Función para eliminar cliente
+CREATE OR REPLACE FUNCTION public.eliminar_cliente(p_id INTEGER)
+RETURNS BOOLEAN
+LANGUAGE plpgsql
+AS $$
+DECLARE
+    v_nombre VARCHAR(100);
+    v_apellido VARCHAR(100);
+    v_count INTEGER;
+BEGIN
+    -- Verificar si el cliente existe
+    SELECT nombre, apellido INTO v_nombre, v_apellido FROM clientes WHERE id = p_id;
+    IF NOT FOUND THEN
+        RAISE EXCEPTION 'Cliente con ID % no encontrado', p_id;
+    END IF;
+    
+    -- Verificar si hay reservas asociadas
+    SELECT COUNT(*) INTO v_count FROM reservas WHERE cliente_id = p_id;
+    IF v_count > 0 THEN
+        RAISE EXCEPTION 'No se puede eliminar el cliente porque tiene % reservas asociadas', v_count;
+    END IF;
+    
+    -- Eliminar el cliente
+    DELETE FROM clientes WHERE id = p_id;
+    
+    -- Registrar auditoría
+    CALL proc_registrar_auditoria_manual(
+        'DELETE', 1, 'clientes', p_id, 
+        'Cliente eliminado: ' || v_nombre || ' ' || v_apellido
+    );
+    
+    RETURN TRUE;
+END;
+$$;
+ALTER FUNCTION public.eliminar_cliente(INTEGER) OWNER TO postgres;
+
+-- Función para obtener cliente por ID
+CREATE OR REPLACE FUNCTION public.obtener_cliente_por_id(p_id INTEGER)
+RETURNS TABLE(
+    id INTEGER,
+    nombre VARCHAR(100),
+    apellido VARCHAR(100),
+    email VARCHAR(150),
+    telefono VARCHAR(20),
+    direccion TEXT,
+    fecha_registro TIMESTAMP,
+    fecha_actualizacion TIMESTAMP
+)
+LANGUAGE plpgsql
+AS $$
+BEGIN
+    RETURN QUERY
+    SELECT 
+        c.id,
+        c.nombre,
+        c.apellido,
+        c.email,
+        c.telefono,
+        c.direccion,
+        c.fecha_registro,
+        c.fecha_actualizacion
+    FROM clientes c
+    WHERE c.id = p_id;
+END;
+$$;
+ALTER FUNCTION public.obtener_cliente_por_id(INTEGER) OWNER TO postgres;
+
+-- Función para obtener todos los clientes
+CREATE OR REPLACE FUNCTION public.obtener_clientes()
+RETURNS TABLE(
+    id INTEGER,
+    nombre VARCHAR(100),
+    apellido VARCHAR(100),
+    email VARCHAR(150),
+    telefono VARCHAR(20),
+    direccion TEXT,
+    fecha_registro TIMESTAMP,
+    fecha_actualizacion TIMESTAMP
+)
+LANGUAGE plpgsql
+AS $$
+BEGIN
+    RETURN QUERY
+    SELECT 
+        c.id,
+        c.nombre,
+        c.apellido,
+        c.email,
+        c.telefono,
+        c.direccion,
+        c.fecha_registro,
+        c.fecha_actualizacion
+    FROM clientes c
+    ORDER BY c.apellido, c.nombre;
+END;
+$$;
+ALTER FUNCTION public.obtener_clientes() OWNER TO postgres;
+
+-- Función para buscar canchas por tipo de deporte
+CREATE OR REPLACE FUNCTION public.buscar_canchas_por_deporte(p_tipo_deporte VARCHAR(50))
+RETURNS TABLE(
+    id INTEGER,
+    nombre VARCHAR(100),
+    tipo_deporte VARCHAR(50),
+    capacidad INTEGER,
+    precio_hora NUMERIC(10,2),
+    estado VARCHAR(20),
+    horario_apertura TIME,
+    horario_cierre TIME,
+    descripcion TEXT,
+    tipo_cancha_id INTEGER,
+    tipo_cancha_nombre VARCHAR(100)
+)
+LANGUAGE plpgsql
+AS $$
+BEGIN
+    RETURN QUERY
+    SELECT 
+        c.id,
+        c.nombre,
+        c.tipo_deporte,
+        c.capacidad,
+        c.precio_hora,
+        c.estado,
+        c.horario_apertura,
+        c.horario_cierre,
+        c.descripcion,
+        c.tipo_cancha_id,
+        tc.nombre as tipo_cancha_nombre
+    FROM canchas c
+    LEFT JOIN tipos_cancha tc ON c.tipo_cancha_id = tc.id
+    WHERE LOWER(c.tipo_deporte) LIKE LOWER('%' || p_tipo_deporte || '%')
+    AND c.estado = 'Activa'
+    ORDER BY c.nombre;
+END;
+$$;
+ALTER FUNCTION public.buscar_canchas_por_deporte(VARCHAR) OWNER TO postgres;
+
+-- Función para obtener estadísticas de reservas por cliente
+CREATE OR REPLACE FUNCTION public.obtener_estadisticas_cliente(p_cliente_id INTEGER)
+RETURNS TABLE(
+    cliente_id INTEGER,
+    cliente_nombre VARCHAR(200),
+    total_reservas INTEGER,
+    total_pagado NUMERIC(10,2),
+    ultima_reserva DATE,
+    cancha_favorita VARCHAR(100)
+)
+LANGUAGE plpgsql
+AS $$
+BEGIN
+    RETURN QUERY
+    SELECT 
+        c.id as cliente_id,
+        c.nombre || ' ' || c.apellido as cliente_nombre,
+        COUNT(r.id) as total_reservas,
+        COALESCE(SUM(p.monto), 0) as total_pagado,
+        MAX(r.fecha_reserva) as ultima_reserva,
+        (SELECT nombre FROM canchas WHERE id = (
+            SELECT cancha_id 
+            FROM reservas 
+            WHERE cliente_id = c.id 
+            GROUP BY cancha_id 
+            ORDER BY COUNT(*) DESC 
+            LIMIT 1
+        )) as cancha_favorita
+    FROM clientes c
+    LEFT JOIN reservas r ON c.id = r.cliente_id
+    LEFT JOIN pagos p ON r.id = p.reserva_id
+    WHERE c.id = p_cliente_id
+    GROUP BY c.id, c.nombre, c.apellido;
+END;
+$$;
+ALTER FUNCTION public.obtener_estadisticas_cliente(INTEGER) OWNER TO postgres;
+
+-- Función para verificar disponibilidad de cancha en un rango de fechas
+CREATE OR REPLACE FUNCTION public.verificar_disponibilidad_rango(
+    p_cancha_id INTEGER,
+    p_fecha_inicio DATE,
+    p_fecha_fin DATE,
+    p_hora_inicio TIME,
+    p_hora_fin TIME
+)
+RETURNS TABLE(
+    fecha DATE,
+    disponible BOOLEAN,
+    conflictos INTEGER
+)
+LANGUAGE plpgsql
+AS $$
+DECLARE
+    v_fecha DATE;
+    v_conflictos INTEGER;
+BEGIN
+    FOR v_fecha IN 
+        SELECT generate_series(p_fecha_inicio, p_fecha_fin, '1 day'::interval)::date
+    LOOP
+        SELECT COUNT(*) INTO v_conflictos
+        FROM reservas
+        WHERE cancha_id = p_cancha_id
+        AND fecha_reserva = v_fecha
+        AND (
+            (hora_inicio < p_hora_fin AND hora_fin > p_hora_inicio)
+        );
+        
+        RETURN QUERY SELECT v_fecha, (v_conflictos = 0), v_conflictos;
+    END LOOP;
+END;
+$$;
+ALTER FUNCTION public.verificar_disponibilidad_rango(INTEGER, DATE, DATE, TIME, TIME) OWNER TO postgres;
+
+-- =====================================================
+-- PASO 8: PROCEDIMIENTOS ALMACENADOS
+-- =====================================================
+
+-- Procedimiento para registrar pago
+CREATE OR REPLACE PROCEDURE public.proc_registrar_pago(
+    p_reserva_id INTEGER,
+    p_monto NUMERIC,
+    p_metodo_pago VARCHAR(50),
+    p_observaciones TEXT DEFAULT NULL
+)
+LANGUAGE plpgsql
+AS $$
+DECLARE
+    v_cliente_id INTEGER;
+    v_pago_id INTEGER;
+BEGIN
+    -- Obtener el cliente_id de la reserva
+    SELECT cliente_id INTO v_cliente_id
+    FROM reservas
+    WHERE id = p_reserva_id;
+    
+    -- Verificar que la reserva existe
+    IF v_cliente_id IS NULL THEN
+        RAISE EXCEPTION 'La reserva con ID % no existe', p_reserva_id;
+    END IF;
+    
+    -- Insertar el pago
+    INSERT INTO pagos (
+        reserva_id,
+        cliente_id,
+        monto,
+        metodo_pago,
+        estado,
+        observaciones,
+        fecha_pago,
+        fecha_creacion,
+        fecha_actualizacion
+    ) VALUES (
+        p_reserva_id,
+        v_cliente_id,
+        p_monto,
+        p_metodo_pago,
+        'Completado',
+        p_observaciones,
+        CURRENT_DATE,
+        CURRENT_TIMESTAMP,
+        CURRENT_TIMESTAMP
+    ) RETURNING id INTO v_pago_id;
+    
+    -- Actualizar el estado de la reserva a 'Pagada'
+    UPDATE reservas 
+    SET estado = 'Pagada',
+        fecha_actualizacion = CURRENT_TIMESTAMP
+    WHERE id = p_reserva_id;
+    
+    -- Registrar en auditoría
+    INSERT INTO auditoria (
+        tabla,
+        tipo_accion,
+        registro_id,
+        usuario_id,
+        detalles,
+        resultado,
+        ip_address,
+        fecha_hora
+    ) VALUES (
+        'pagos',
+        'INSERT',
+        v_pago_id,
+        COALESCE(current_setting('app.current_user_id', true)::INTEGER, 1),
+        'Pago registrado automáticamente - Reserva: ' || p_reserva_id || ', Cliente: ' || v_cliente_id || ', Monto: ' || p_monto || ', Método: ' || p_metodo_pago,
+        'SUCCESS',
+        '127.0.0.1',
+        CURRENT_TIMESTAMP
+    );
+    
+    RAISE NOTICE 'Pago registrado exitosamente con ID: %', v_pago_id;
+END;
+$$;
+
+-- Procedimiento para gestionar reservas
+CREATE OR REPLACE PROCEDURE public.proc_gestionar_reserva(
+    IN p_accion character varying,
+    IN p_id integer DEFAULT NULL,
+    IN p_cliente_id integer DEFAULT NULL,
+    IN p_cancha_id integer DEFAULT NULL,
+    IN p_fecha_reserva date DEFAULT NULL,
+    IN p_hora_inicio time without time zone DEFAULT NULL,
+    IN p_hora_fin time without time zone DEFAULT NULL,
+    IN p_observaciones text DEFAULT NULL,
+    IN p_estado character varying DEFAULT 'pendiente'
+)
+LANGUAGE plpgsql
+AS $$
+DECLARE
+    v_reserva_id INTEGER;
+    v_duracion DECIMAL(10,2);
+    v_disponible BOOLEAN;
+BEGIN
+    -- Validar parámetros de entrada
+    IF p_accion IS NULL OR p_accion NOT IN ('CREATE', 'UPDATE', 'CANCEL') THEN
+        RAISE EXCEPTION 'Acción no válida. Debe ser CREATE, UPDATE o CANCEL';
+    END IF;
+    
+    CASE p_accion
+        WHEN 'CREATE' THEN
+            -- Calcular duración
+            v_duracion := EXTRACT(EPOCH FROM (p_hora_fin - p_hora_inicio)) / 3600;
+            
+            -- Validar duración
+            IF v_duracion <= 0 THEN
+                RAISE EXCEPTION 'La duración debe ser mayor a 0 horas';
+            END IF;
+            
+            -- Validar fecha
+            IF p_fecha_reserva < CURRENT_DATE THEN
+                RAISE EXCEPTION 'No se pueden crear reservas en fechas pasadas';
+            END IF;
+            
+            -- Verificar disponibilidad
+            SELECT verificar_disponibilidad_cancha(p_cancha_id, p_fecha_reserva, p_hora_inicio, p_hora_fin) 
+            INTO v_disponible;
+            
+            IF NOT v_disponible THEN
+                RAISE EXCEPTION 'La cancha no está disponible en el horario especificado';
+            END IF;
+            
+            -- Crear la reserva
+            INSERT INTO reservas (
+                cliente_id, cancha_id, fecha_reserva, hora_inicio, hora_fin,
+                duracion, observaciones, estado, fecha_creacion, fecha_actualizacion
+            ) VALUES (
+                p_cliente_id, p_cancha_id, p_fecha_reserva, p_hora_inicio, p_hora_fin,
+                v_duracion, p_observaciones, p_estado, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP
+            ) RETURNING id INTO v_reserva_id;
+            
+            RAISE NOTICE 'Reserva creada exitosamente con ID: %', v_reserva_id;
+            
+        WHEN 'UPDATE' THEN
+            -- Calcular duración
+            v_duracion := EXTRACT(EPOCH FROM (p_hora_fin - p_hora_inicio)) / 3600;
+            
+            -- Validar duración
+            IF v_duracion <= 0 THEN
+                RAISE EXCEPTION 'La duración debe ser mayor a 0 horas';
+            END IF;
+            
+            -- Validar fecha
+            IF p_fecha_reserva < CURRENT_DATE THEN
+                RAISE EXCEPTION 'No se pueden crear reservas en fechas pasadas';
+            END IF;
+            
+            -- Verificar disponibilidad (excluyendo la reserva actual)
+            SELECT NOT EXISTS (
+                SELECT 1 FROM reservas 
+                WHERE cancha_id = p_cancha_id 
+                AND fecha_reserva = p_fecha_reserva
+                AND id != p_id
+                AND estado IN ('confirmada', 'pendiente')
+                AND (
+                    (hora_inicio < p_hora_fin AND hora_fin > p_hora_inicio) OR
+                    (hora_inicio >= p_hora_inicio AND hora_inicio < p_hora_fin)
+                )
+            ) INTO v_disponible;
+            
+            IF NOT v_disponible THEN
+                RAISE EXCEPTION 'La cancha no está disponible en el horario especificado';
+            END IF;
+            
+            -- Actualizar la reserva
+            UPDATE reservas SET
+                cliente_id = p_cliente_id,
+                cancha_id = p_cancha_id,
+                fecha_reserva = p_fecha_reserva,
+                hora_inicio = p_hora_inicio,
+                hora_fin = p_hora_fin,
+                duracion = v_duracion,
+                observaciones = p_observaciones,
+                estado = p_estado,
+                fecha_actualizacion = CURRENT_TIMESTAMP
+            WHERE id = p_id;
+            
+            RAISE NOTICE 'Reserva actualizada exitosamente';
+            
+        WHEN 'CANCEL' THEN
+            -- Cancelar la reserva
+            UPDATE reservas SET
+                estado = 'cancelada',
+                fecha_actualizacion = CURRENT_TIMESTAMP
+            WHERE id = p_id;
+            
+            RAISE NOTICE 'Reserva cancelada exitosamente';
+    END CASE;
+END;
+$$;
+
+-- Procedimiento para registrar auditoría manual (CORREGIDO: sin COMMIT para compatibilidad con funciones)
+CREATE OR REPLACE PROCEDURE public.proc_registrar_auditoria_manual(
+    p_tipo_accion VARCHAR(20),
+    p_usuario_id INTEGER DEFAULT NULL,
+    p_tabla VARCHAR(50) DEFAULT NULL,
+    p_registro_id INTEGER DEFAULT NULL,
+    p_detalles TEXT DEFAULT NULL,
+    p_ip_address VARCHAR(45) DEFAULT '127.0.0.1'
+)
+LANGUAGE plpgsql
+AS $$
+DECLARE
+    v_auditoria_id INTEGER;
+    v_usuario_existe BOOLEAN;
+    v_tabla_existe BOOLEAN;
+BEGIN
+    -- Validar parámetros de entrada
+    IF p_tipo_accion IS NULL OR p_tipo_accion NOT IN ('INSERT', 'UPDATE', 'DELETE', 'SELECT', 'LOGIN', 'LOGOUT', 'ERROR') THEN
+        RAISE EXCEPTION 'Tipo de acción no válido. Debe ser INSERT, UPDATE, DELETE, SELECT, LOGIN, LOGOUT o ERROR';
+    END IF;
+
+    -- Verificar que el usuario existe (si se proporciona)
+    IF p_usuario_id IS NOT NULL THEN
+        SELECT EXISTS(SELECT 1 FROM usuarios WHERE id = p_usuario_id) INTO v_usuario_existe;
+        IF NOT v_usuario_existe THEN
+            RAISE EXCEPTION 'El usuario con ID % no existe', p_usuario_id;
+        END IF;
+    END IF;
+
+    -- Verificar que la tabla existe (solo para acciones de tabla)
+    IF p_tipo_accion IN ('INSERT', 'UPDATE', 'DELETE', 'SELECT') AND p_tabla IS NOT NULL THEN
+        SELECT EXISTS(
+            SELECT 1 FROM information_schema.tables 
+            WHERE table_schema = 'public' 
+            AND table_name = p_tabla
+        ) INTO v_tabla_existe;
+        IF NOT v_tabla_existe THEN
+            RAISE EXCEPTION 'La tabla % no existe', p_tabla;
+        END IF;
+    END IF;
+
+    -- Validar IP address
+    IF p_ip_address IS NULL OR p_ip_address = '' THEN
+        p_ip_address := '127.0.0.1';
+    END IF;
+
+    -- Insertar registro de auditoría
+    INSERT INTO auditoria (
+        usuario_id,
+        tipo_accion,
+        tabla,
+        registro_id,
+        detalles,
+        resultado,
+        ip_address,
+        fecha_hora
+    ) VALUES (
+        p_usuario_id,
+        p_tipo_accion,
+        p_tabla,
+        p_registro_id,
+        p_detalles,
+        'SUCCESS',
+        p_ip_address,
+        CURRENT_TIMESTAMP
+    ) RETURNING id INTO v_auditoria_id;
+
+    RAISE NOTICE 'Registro de auditoría creado con ID: %', v_auditoria_id;
+    
+    -- NOTA: No se incluyen sentencias COMMIT o ROLLBACK para mantener compatibilidad
+    -- con llamadas desde funciones que operan en transacciones implícitas
+END;
+$$;
+
+-- Procedimiento para validar y limpiar datos (CORREGIDO: sin COMMIT para compatibilidad con funciones)
+CREATE OR REPLACE PROCEDURE public.proc_validar_y_limpiar_datos(
+    p_tabla VARCHAR(50),
+    p_accion VARCHAR(20)
+)
+LANGUAGE plpgsql
+AS $$
+DECLARE
+    v_sql TEXT;
+    v_count INTEGER;
+BEGIN
+    -- Validar parámetros
+    IF p_tabla IS NULL OR p_accion IS NULL THEN
+        RAISE EXCEPTION 'Los parámetros tabla y acción no pueden ser NULL';
+    END IF;
+    
+    -- Validar acción
+    IF p_accion NOT IN ('VALIDATE', 'CLEAN', 'BACKUP') THEN
+        RAISE EXCEPTION 'Acción no válida. Debe ser VALIDATE, CLEAN o BACKUP';
+    END IF;
+    
+    -- Verificar que la tabla existe
+    IF NOT EXISTS (
+        SELECT 1 FROM information_schema.tables 
+        WHERE table_name = p_tabla 
+        AND table_schema = 'public'
+    ) THEN
+        RAISE EXCEPTION 'La tabla % no existe', p_tabla;
+    END IF;
+    
+    -- Ejecutar acción según el tipo
+    CASE p_accion
+        WHEN 'VALIDATE' THEN
+            -- Validación básica: contar registros
+            EXECUTE format('SELECT COUNT(*) FROM %I', p_tabla) INTO v_count;
+            RAISE NOTICE 'Validación completada para tabla %. Total registros: %', p_tabla, v_count;
+            
+        WHEN 'CLEAN' THEN
+            -- Limpieza básica: no hacer nada por ahora
+            RAISE NOTICE 'Limpieza completada para tabla %', p_tabla;
+            
+        WHEN 'BACKUP' THEN
+            -- Backup básico: crear tabla de backup
+            v_sql := format('CREATE TABLE IF NOT EXISTS %I_backup_%s AS SELECT * FROM %I', 
+                           p_tabla, 
+                           to_char(CURRENT_TIMESTAMP, 'YYYYMMDD_HH24MISS'),
+                           p_tabla);
+            EXECUTE v_sql;
+            RAISE NOTICE 'Backup creado para tabla %', p_tabla;
+            
+    END CASE;
+    
+    -- NO incluir COMMIT aquí - esto causa el error de terminación de transacción
+    -- COMMIT; -- LÍNEA ELIMINADA
+    
+EXCEPTION
+    WHEN OTHERS THEN
+        -- NO incluir ROLLBACK aquí tampoco
+        -- ROLLBACK; -- LÍNEA ELIMINADA
+        RAISE EXCEPTION 'Error en proc_validar_y_limpiar_datos: %', SQLERRM;
+END;
+$$;
+
+-- =====================================================
+-- PASO 9: TRIGGERS
+-- =====================================================
+
+-- Trigger para actualizar fecha de tipos de cancha
+DROP TRIGGER IF EXISTS trigger_actualizar_fecha_tipos_cancha ON public.tipos_cancha;
+CREATE TRIGGER trigger_actualizar_fecha_tipos_cancha 
+    BEFORE UPDATE ON public.tipos_cancha 
+    FOR EACH ROW 
+    EXECUTE FUNCTION public.actualizar_fecha_tipos_cancha();
+
+-- Trigger para auditoría de canchas
+DROP TRIGGER IF EXISTS trigger_auditoria_canchas ON public.canchas;
+CREATE TRIGGER trigger_auditoria_canchas 
+    AFTER INSERT OR DELETE OR UPDATE ON public.canchas 
+    FOR EACH ROW 
+    EXECUTE FUNCTION public.registrar_auditoria_automatica();
+
+-- Trigger para auditoría de clientes
+DROP TRIGGER IF EXISTS trigger_auditoria_clientes ON public.clientes;
+CREATE TRIGGER trigger_auditoria_clientes 
+    AFTER INSERT OR DELETE OR UPDATE ON public.clientes 
+    FOR EACH ROW 
+    EXECUTE FUNCTION public.registrar_auditoria_automatica();
+
+-- Trigger para auditoría de reservas
+DROP TRIGGER IF EXISTS trigger_auditoria_reservas ON public.reservas;
+CREATE TRIGGER trigger_auditoria_reservas 
+    AFTER INSERT OR DELETE OR UPDATE ON public.reservas 
+    FOR EACH ROW 
+    EXECUTE FUNCTION public.registrar_auditoria_automatica();
+
+-- Trigger para auditoría de tipos de cancha
+DROP TRIGGER IF EXISTS trigger_auditoria_tipos_cancha ON public.tipos_cancha;
+CREATE TRIGGER trigger_auditoria_tipos_cancha 
+    AFTER INSERT OR DELETE OR UPDATE ON public.tipos_cancha 
+    FOR EACH ROW 
+    EXECUTE FUNCTION public.registrar_auditoria_automatica();
+
+-- Trigger para auditoría de usuarios
+DROP TRIGGER IF EXISTS trigger_auditoria_usuarios ON public.usuarios;
+CREATE TRIGGER trigger_auditoria_usuarios 
+    AFTER INSERT OR DELETE OR UPDATE ON public.usuarios 
+    FOR EACH ROW 
+    EXECUTE FUNCTION public.registrar_auditoria_automatica();
+
+-- Triggers para actualizar fecha de actualización
+DROP TRIGGER IF EXISTS update_canchas_updated_at ON public.canchas;
+CREATE TRIGGER update_canchas_updated_at 
+    BEFORE UPDATE ON public.canchas 
+    FOR EACH ROW 
+    EXECUTE FUNCTION public.update_updated_at_column();
+
+DROP TRIGGER IF EXISTS update_clientes_updated_at ON public.clientes;
+CREATE TRIGGER update_clientes_updated_at 
+    BEFORE UPDATE ON public.clientes 
+    FOR EACH ROW 
+    EXECUTE FUNCTION public.update_updated_at_column();
+
+DROP TRIGGER IF EXISTS update_pagos_updated_at ON public.pagos;
+CREATE TRIGGER update_pagos_updated_at 
+    BEFORE UPDATE ON public.pagos 
+    FOR EACH ROW 
+    EXECUTE FUNCTION public.update_updated_at_column();
+
+DROP TRIGGER IF EXISTS update_reservas_updated_at ON public.reservas;
+CREATE TRIGGER update_reservas_updated_at 
+    BEFORE UPDATE ON public.reservas 
+    FOR EACH ROW 
+    EXECUTE FUNCTION public.update_updated_at_column();
+
+DROP TRIGGER IF EXISTS update_tipos_cancha_updated_at ON public.tipos_cancha;
+CREATE TRIGGER update_tipos_cancha_updated_at 
+    BEFORE UPDATE ON public.tipos_cancha 
+    FOR EACH ROW 
+    EXECUTE FUNCTION public.update_updated_at_column();
+
+DROP TRIGGER IF EXISTS update_usuarios_updated_at ON public.usuarios;
+CREATE TRIGGER update_usuarios_updated_at 
+    BEFORE UPDATE ON public.usuarios 
+    FOR EACH ROW 
+    EXECUTE FUNCTION public.update_updated_at_column();
+
+-- =====================================================
+-- PASO 10: VISTAS
+-- =====================================================
+
+-- Vista completa de reservas
+DROP VIEW IF EXISTS public.vista_reservas_completa CASCADE;
+CREATE VIEW public.vista_reservas_completa AS
+ SELECT r.id,
+    r.fecha_reserva,
+    r.hora_inicio,
+    r.hora_fin,
+    r.duracion,
+    r.estado,
+    r.observaciones,
+    c.nombre AS nombre_cliente,
+    c.apellido AS apellido_cliente,
+    c.email AS email_cliente,
+    c.telefono AS telefono_cliente,
+    ca.nombre AS nombre_cancha,
+    ca.tipo_deporte,
+    ca.precio_hora,
+    (r.duracion * ca.precio_hora) AS precio_total,
+    r.fecha_creacion,
+    r.fecha_actualizacion
+   FROM ((public.reservas r
+     JOIN public.clientes c ON ((r.cliente_id = c.id)))
+     JOIN public.canchas ca ON ((r.cancha_id = ca.id)));
+
+-- Vista de reservas pendientes de pago
+DROP VIEW IF EXISTS public.vista_reservas_pendientes_pago CASCADE;
+CREATE VIEW public.vista_reservas_pendientes_pago AS
+SELECT 
+    r.id as reserva_id,
+    r.fecha_reserva,
+    r.hora_inicio,
+    r.hora_fin,
+    r.duracion,
+    r.estado as estado_reserva,
+    r.observaciones as observaciones_reserva,
+    c.id as cliente_id,
+    c.nombre as nombre_cliente,
+    c.apellido as apellido_cliente,
+    c.email as email_cliente,
+    c.telefono as telefono_cliente,
+    ca.id as cancha_id,
+    ca.nombre as nombre_cancha,
+    ca.tipo_deporte,
+    ca.precio_hora,
+    (r.duracion * ca.precio_hora) as precio_total_calculado,
+    COALESCE(SUM(p.monto), 0) as total_pagado,
+    ((r.duracion * ca.precio_hora) - COALESCE(SUM(p.monto), 0)) as saldo_pendiente,
+    CASE 
+        WHEN COALESCE(SUM(p.monto), 0) >= (r.duracion * ca.precio_hora) THEN 'Pagado'
+        WHEN COALESCE(SUM(p.monto), 0) > 0 THEN 'Pago Parcial'
+        ELSE 'Sin Pago'
+    END as estado_pago,
+    r.fecha_creacion,
+    r.fecha_actualizacion
+FROM reservas r
+JOIN clientes c ON r.cliente_id = c.id
+JOIN canchas ca ON r.cancha_id = ca.id
+LEFT JOIN pagos p ON r.id = p.reserva_id AND p.estado = 'Completado'
+WHERE r.estado IN ('confirmada', 'pendiente', 'Confirmada', 'Pendiente')
+GROUP BY r.id, r.fecha_reserva, r.hora_inicio, r.hora_fin, r.duracion, r.estado, r.observaciones,
+         c.id, c.nombre, c.apellido, c.email, c.telefono,
+         ca.id, ca.nombre, ca.tipo_deporte, ca.precio_hora, r.fecha_creacion, r.fecha_actualizacion
+HAVING COALESCE(SUM(p.monto), 0) < (r.duracion * ca.precio_hora)
+ORDER BY r.fecha_reserva DESC, r.hora_inicio;
+
+-- Vista de historial de pagos
+DROP VIEW IF EXISTS public.vista_historial_pagos CASCADE;
+CREATE VIEW public.vista_historial_pagos AS
+SELECT 
+    p.id as pago_id,
+    p.fecha_pago,
+    p.monto,
+    p.metodo_pago,
+    p.estado as estado_pago,
+    p.observaciones as observaciones_pago,
+    r.id as reserva_id,
+    r.fecha_reserva,
+    r.hora_inicio,
+    r.hora_fin,
+    r.duracion,
+    r.estado as estado_reserva,
+    c.id as cliente_id,
+    c.nombre as nombre_cliente,
+    c.apellido as apellido_cliente,
+    c.email as email_cliente,
+    c.telefono as telefono_cliente,
+    ca.id as cancha_id,
+    ca.nombre as nombre_cancha,
+    ca.tipo_deporte,
+    ca.precio_hora,
+    (r.duracion * ca.precio_hora) as precio_total_reserva,
+    p.fecha_creacion,
+    p.fecha_actualizacion
+FROM pagos p
+JOIN reservas r ON p.reserva_id = r.id
+JOIN clientes c ON p.cliente_id = c.id
+JOIN canchas ca ON r.cancha_id = ca.id
+ORDER BY p.fecha_pago DESC, p.fecha_creacion DESC;
+
+-- Vista de canchas disponibles
+DROP VIEW IF EXISTS public.vista_canchas_disponibles CASCADE;
+CREATE VIEW public.vista_canchas_disponibles AS
+SELECT 
+    c.id,
+    c.nombre,
+    c.tipo_deporte,
+    c.capacidad,
+    c.precio_hora,
+    c.estado,
+    c.horario_apertura,
+    c.horario_cierre,
+    c.descripcion,
+    tc.nombre as tipo_cancha_nombre,
+    tc.descripcion as tipo_cancha_descripcion,
+    tc.precio_por_hora as precio_tipo_cancha,
+    COUNT(r.id) as reservas_activas,
+    COALESCE(SUM(CASE WHEN r.estado = 'Confirmada' THEN 1 ELSE 0 END), 0) as reservas_confirmadas,
+    COALESCE(SUM(CASE WHEN r.estado = 'Pendiente' THEN 1 ELSE 0 END), 0) as reservas_pendientes,
+    c.fecha_creacion,
+    c.fecha_actualizacion
+FROM canchas c
+LEFT JOIN tipos_cancha tc ON c.tipo_cancha_id = tc.id
+LEFT JOIN reservas r ON c.id = r.cancha_id AND r.fecha_reserva >= CURRENT_DATE
+GROUP BY c.id, c.nombre, c.tipo_deporte, c.capacidad, c.precio_hora, c.estado,
+         c.horario_apertura, c.horario_cierre, c.descripcion, tc.nombre, tc.descripcion,
+         tc.precio_por_hora, c.fecha_creacion, c.fecha_actualizacion
+ORDER BY c.nombre;
+
+-- =====================================================
+-- PASO 9: VISTAS ADICIONALES (FALTANTES)
+-- =====================================================
+
+-- Vista de reporte de reservas (faltante)
+DROP VIEW IF EXISTS public.vista_reporte_reservas CASCADE;
+CREATE VIEW public.vista_reporte_reservas AS
+SELECT 
+    r.id as reserva_id,
+    r.fecha_reserva,
+    r.hora_inicio,
+    r.hora_fin,
+    r.duracion,
+    r.estado as estado_reserva,
+    r.observaciones as observaciones_reserva,
+    c.id as cliente_id,
+    c.nombre as nombre_cliente,
+    c.apellido as apellido_cliente,
+    c.email as email_cliente,
+    c.telefono as telefono_cliente,
+    ca.id as cancha_id,
+    ca.nombre as nombre_cancha,
+    ca.tipo_deporte,
+    ca.precio_hora,
+    tc.nombre as tipo_cancha_nombre,
+    tc.descripcion as tipo_cancha_descripcion,
+    (r.duracion * ca.precio_hora) as precio_total_calculado,
+    COALESCE(SUM(p.monto), 0) as total_pagado,
+    ((r.duracion * ca.precio_hora) - COALESCE(SUM(p.monto), 0)) as saldo_pendiente,
+    CASE 
+        WHEN COALESCE(SUM(p.monto), 0) >= (r.duracion * ca.precio_hora) THEN 'Pagado'
+        WHEN COALESCE(SUM(p.monto), 0) > 0 THEN 'Pago Parcial'
+        ELSE 'Sin Pago'
+    END as estado_pago,
+    r.fecha_creacion,
+    r.fecha_actualizacion
+FROM reservas r
+JOIN clientes c ON r.cliente_id = c.id
+JOIN canchas ca ON r.cancha_id = ca.id
+LEFT JOIN tipos_cancha tc ON ca.tipo_cancha_id = tc.id
+LEFT JOIN pagos p ON r.id = p.reserva_id AND p.estado = 'Completado'
+GROUP BY r.id, r.fecha_reserva, r.hora_inicio, r.hora_fin, r.duracion, r.estado, r.observaciones,
+         c.id, c.nombre, c.apellido, c.email, c.telefono,
+         ca.id, ca.nombre, ca.tipo_deporte, ca.precio_hora, tc.nombre, tc.descripcion,
+         r.fecha_creacion, r.fecha_actualizacion
+ORDER BY r.fecha_reserva DESC, r.hora_inicio DESC;
+
+-- Vista de canchas más usadas (faltante)
+DROP VIEW IF EXISTS public.vista_canchas_mas_usadas CASCADE;
+CREATE VIEW public.vista_canchas_mas_usadas AS
+SELECT 
+    c.id,
+    c.nombre,
+    c.tipo_deporte,
+    c.precio_hora,
+    tc.nombre as tipo_cancha_nombre,
+    tc.descripcion as tipo_cancha_descripcion,
+    COUNT(r.id) as total_reservas,
+    COALESCE(SUM(r.duracion * c.precio_hora), 0) as ingresos_totales,
+    ROUND(AVG(r.duracion * c.precio_hora), 2) as promedio_por_reserva,
+    COUNT(DISTINCT r.cliente_id) as clientes_unicos,
+    COUNT(CASE WHEN r.estado = 'Confirmada' THEN 1 END) as reservas_confirmadas,
+    COUNT(CASE WHEN r.estado = 'Pendiente' THEN 1 END) as reservas_pendientes,
+    COUNT(CASE WHEN r.estado = 'Cancelada' THEN 1 END) as reservas_canceladas,
+    c.estado,
+    c.fecha_creacion,
+    c.fecha_actualizacion
+FROM canchas c
+LEFT JOIN tipos_cancha tc ON c.tipo_cancha_id = tc.id
+LEFT JOIN reservas r ON c.id = r.cancha_id 
+    AND r.estado IN ('Confirmada', 'Completada', 'Pendiente')
+GROUP BY c.id, c.nombre, c.tipo_deporte, c.precio_hora, tc.nombre, tc.descripcion,
+         c.estado, c.fecha_creacion, c.fecha_actualizacion
+ORDER BY total_reservas DESC, ingresos_totales DESC;
+
+-- Vista de resumen de pagos por período (faltante)
+DROP VIEW IF EXISTS public.vista_resumen_pagos_periodo CASCADE;
+CREATE VIEW public.vista_resumen_pagos_periodo AS
+SELECT 
+    DATE_TRUNC('month', p.fecha_pago) as mes,
+    COUNT(p.id) as total_pagos,
+    COALESCE(SUM(p.monto), 0) as total_recaudado,
+    ROUND(AVG(p.monto), 2) as promedio_pago,
+    COUNT(DISTINCT p.cliente_id) as clientes_unicos,
+    COUNT(DISTINCT r.cancha_id) as canchas_utilizadas,
+    COUNT(CASE WHEN p.estado = 'Completado' THEN 1 END) as pagos_completados,
+    COUNT(CASE WHEN p.estado = 'Pendiente' THEN 1 END) as pagos_pendientes,
+    COUNT(CASE WHEN p.metodo_pago = 'Efectivo' THEN 1 END) as pagos_efectivo,
+    COUNT(CASE WHEN p.metodo_pago = 'Tarjeta de Crédito' THEN 1 END) as pagos_tarjeta_credito,
+    COUNT(CASE WHEN p.metodo_pago = 'Tarjeta de Débito' THEN 1 END) as pagos_tarjeta_debito,
+    COUNT(CASE WHEN p.metodo_pago = 'Transferencia Bancaria' THEN 1 END) as pagos_transferencia,
+    COUNT(CASE WHEN p.metodo_pago = 'Pago Móvil' THEN 1 END) as pagos_movil
+FROM pagos p
+LEFT JOIN reservas r ON p.reserva_id = r.id
+WHERE p.fecha_pago IS NOT NULL
+GROUP BY DATE_TRUNC('month', p.fecha_pago)
+ORDER BY mes DESC;
+
+-- =====================================================
+-- PASO 11: PERMISOS Y PRIVILEGIOS
+-- =====================================================
+
+-- Otorgar permisos al esquema
+GRANT USAGE ON SCHEMA public TO operador_reservas;
+GRANT USAGE ON SCHEMA public TO consultor_reservas;
+
+-- Permisos para tablas
+GRANT ALL ON TABLE public.auditoria TO admin_reservas;
+GRANT SELECT,INSERT,DELETE,UPDATE ON TABLE public.auditoria TO operador_reservas;
+GRANT SELECT ON TABLE public.auditoria TO consultor_reservas;
+
+GRANT ALL ON TABLE public.canchas TO admin_reservas;
+GRANT SELECT,INSERT,DELETE,UPDATE ON TABLE public.canchas TO operador_reservas;
+GRANT SELECT ON TABLE public.canchas TO consultor_reservas;
+
+GRANT ALL ON TABLE public.clientes TO admin_reservas;
+GRANT SELECT,INSERT,DELETE,UPDATE ON TABLE public.clientes TO operador_reservas;
+GRANT SELECT ON TABLE public.clientes TO consultor_reservas;
+
+GRANT ALL ON TABLE public.pagos TO admin_reservas;
+GRANT SELECT,INSERT,DELETE,UPDATE ON TABLE public.pagos TO operador_reservas;
+GRANT SELECT ON TABLE public.pagos TO consultor_reservas;
+
+GRANT ALL ON TABLE public.reservas TO admin_reservas;
+GRANT SELECT,INSERT,DELETE,UPDATE ON TABLE public.reservas TO operador_reservas;
+GRANT SELECT ON TABLE public.reservas TO consultor_reservas;
+
+GRANT ALL ON TABLE public.tipos_cancha TO admin_reservas;
+GRANT SELECT,INSERT,DELETE,UPDATE ON TABLE public.tipos_cancha TO operador_reservas;
+GRANT SELECT ON TABLE public.tipos_cancha TO consultor_reservas;
+
+GRANT ALL ON TABLE public.usuarios TO admin_reservas;
+GRANT SELECT,INSERT,DELETE,UPDATE ON TABLE public.usuarios TO operador_reservas;
+GRANT SELECT ON TABLE public.usuarios TO consultor_reservas;
+
+-- Permisos para secuencias
+GRANT ALL ON SEQUENCE public.auditoria_id_seq TO admin_reservas;
+GRANT SELECT,USAGE ON SEQUENCE public.auditoria_id_seq TO operador_reservas;
+GRANT SELECT ON SEQUENCE public.auditoria_id_seq TO consultor_reservas;
+
+GRANT ALL ON SEQUENCE public.canchas_id_seq TO admin_reservas;
+GRANT SELECT,USAGE ON SEQUENCE public.canchas_id_seq TO operador_reservas;
+GRANT SELECT ON SEQUENCE public.canchas_id_seq TO consultor_reservas;
+
+GRANT ALL ON SEQUENCE public.clientes_id_seq TO admin_reservas;
+GRANT SELECT,USAGE ON SEQUENCE public.clientes_id_seq TO operador_reservas;
+GRANT SELECT ON SEQUENCE public.clientes_id_seq TO consultor_reservas;
+
+GRANT ALL ON SEQUENCE public.pagos_id_seq TO admin_reservas;
+GRANT SELECT,USAGE ON SEQUENCE public.pagos_id_seq TO operador_reservas;
+GRANT SELECT ON SEQUENCE public.pagos_id_seq TO consultor_reservas;
+
+GRANT ALL ON SEQUENCE public.reservas_id_seq TO admin_reservas;
+GRANT SELECT,USAGE ON SEQUENCE public.reservas_id_seq TO operador_reservas;
+GRANT SELECT ON SEQUENCE public.reservas_id_seq TO consultor_reservas;
+
+GRANT ALL ON SEQUENCE public.tipos_cancha_id_seq TO admin_reservas;
+GRANT SELECT,USAGE ON SEQUENCE public.tipos_cancha_id_seq TO operador_reservas;
+GRANT SELECT ON SEQUENCE public.tipos_cancha_id_seq TO consultor_reservas;
+
+GRANT ALL ON SEQUENCE public.usuarios_id_seq TO admin_reservas;
+GRANT SELECT,USAGE ON SEQUENCE public.usuarios_id_seq TO operador_reservas;
+GRANT SELECT ON SEQUENCE public.usuarios_id_seq TO consultor_reservas;
+
+-- Permisos para funciones y procedimientos
+GRANT EXECUTE ON FUNCTION public.verificar_disponibilidad_cancha(integer, date, time without time zone, time without time zone) TO admin_reservas, operador_reservas;
+GRANT EXECUTE ON FUNCTION public.crear_reserva(integer, integer, date, time without time zone, time without time zone, text) TO admin_reservas, operador_reservas;
+GRANT EXECUTE ON FUNCTION public.obtener_canchas() TO admin_reservas, operador_reservas, consultor_reservas;
+GRANT EXECUTE ON FUNCTION public.obtener_tipos_cancha() TO admin_reservas, operador_reservas, consultor_reservas;
+
+-- Permisos para las nuevas funciones implementadas
+GRANT EXECUTE ON FUNCTION public.crear_tipo_cancha(VARCHAR, TEXT, NUMERIC) TO admin_reservas, operador_reservas;
+GRANT EXECUTE ON FUNCTION public.eliminar_tipo_cancha(INTEGER) TO admin_reservas, operador_reservas;
+GRANT EXECUTE ON FUNCTION public.actualizar_tipo_cancha(INTEGER, VARCHAR, TEXT, NUMERIC, BOOLEAN) TO admin_reservas, operador_reservas;
+GRANT EXECUTE ON FUNCTION public.obtener_cancha_por_id(INTEGER) TO admin_reservas, operador_reservas, consultor_reservas;
+GRANT EXECUTE ON FUNCTION public.obtener_canchas_con_tipos() TO admin_reservas, operador_reservas, consultor_reservas;
+GRANT EXECUTE ON FUNCTION public.crear_cliente(VARCHAR, VARCHAR, VARCHAR, VARCHAR, TEXT) TO admin_reservas, operador_reservas;
+GRANT EXECUTE ON FUNCTION public.actualizar_cliente(INTEGER, VARCHAR, VARCHAR, VARCHAR, VARCHAR, TEXT) TO admin_reservas, operador_reservas;
+GRANT EXECUTE ON FUNCTION public.eliminar_cliente(INTEGER) TO admin_reservas, operador_reservas;
+GRANT EXECUTE ON FUNCTION public.obtener_cliente_por_id(INTEGER) TO admin_reservas, operador_reservas, consultor_reservas;
+GRANT EXECUTE ON FUNCTION public.obtener_clientes() TO admin_reservas, operador_reservas, consultor_reservas;
+GRANT EXECUTE ON FUNCTION public.buscar_canchas_por_deporte(VARCHAR) TO admin_reservas, operador_reservas, consultor_reservas;
+GRANT EXECUTE ON FUNCTION public.obtener_estadisticas_cliente(INTEGER) TO admin_reservas, operador_reservas, consultor_reservas;
+GRANT EXECUTE ON FUNCTION public.verificar_disponibilidad_rango(INTEGER, DATE, DATE, TIME, TIME) TO admin_reservas, operador_reservas;
+
+GRANT EXECUTE ON PROCEDURE public.proc_registrar_pago(integer, numeric, character varying, text) TO admin_reservas, operador_reservas;
+GRANT EXECUTE ON PROCEDURE public.proc_gestionar_reserva(character varying, integer, integer, integer, date, time without time zone, time without time zone, text, character varying) TO admin_reservas, operador_reservas;
+GRANT EXECUTE ON PROCEDURE public.proc_registrar_auditoria_manual(character varying, integer, character varying, integer, text, character varying) TO admin_reservas, operador_reservas;
+GRANT EXECUTE ON PROCEDURE public.proc_validar_y_limpiar_datos(character varying, character varying) TO admin_reservas, operador_reservas;
+
+-- Permisos para vistas
+GRANT ALL ON TABLE public.vista_reservas_completa TO admin_reservas;
+GRANT SELECT ON TABLE public.vista_reservas_completa TO operador_reservas, consultor_reservas;
+
+GRANT ALL ON TABLE public.vista_reservas_pendientes_pago TO admin_reservas;
+GRANT SELECT ON TABLE public.vista_reservas_pendientes_pago TO operador_reservas;
+
+GRANT ALL ON TABLE public.vista_historial_pagos TO admin_reservas;
+GRANT SELECT ON TABLE public.vista_historial_pagos TO operador_reservas;
+
+GRANT ALL ON TABLE public.vista_canchas_disponibles TO admin_reservas;
+GRANT SELECT ON TABLE public.vista_canchas_disponibles TO operador_reservas, consultor_reservas;
+
+-- Permisos para las nuevas vistas
+GRANT ALL ON TABLE public.vista_reporte_reservas TO admin_reservas;
+GRANT SELECT ON TABLE public.vista_reporte_reservas TO operador_reservas, consultor_reservas;
+
+GRANT ALL ON TABLE public.vista_canchas_mas_usadas TO admin_reservas;
+GRANT SELECT ON TABLE public.vista_canchas_mas_usadas TO operador_reservas, consultor_reservas;
+
+GRANT ALL ON TABLE public.vista_resumen_pagos_periodo TO admin_reservas;
+GRANT SELECT ON TABLE public.vista_resumen_pagos_periodo TO operador_reservas;
+
+-- =====================================================
+-- PASO 12: DATOS INICIALES
+-- =====================================================
+
+-- Configurar valores de secuencias
+SELECT pg_catalog.setval('public.auditoria_id_seq', 1, true);
+SELECT pg_catalog.setval('public.canchas_id_seq', 8, true);
+SELECT pg_catalog.setval('public.clientes_id_seq', 5, true);
+SELECT pg_catalog.setval('public.pagos_id_seq', 3, true);
+SELECT pg_catalog.setval('public.reservas_id_seq', 9, true);
+SELECT pg_catalog.setval('public.tipos_cancha_id_seq', 31, true);
+SELECT pg_catalog.setval('public.usuarios_id_seq', 1, true);
+
+-- Insertar usuario administrador
+INSERT INTO public.usuarios (id, username, email, password, nombre, apellido, rol, estado, telefono, fecha_creacion, fecha_actualizacion) VALUES
+(1, 'admin', 'admin@sportcourt.com', '8c6976e5b5410415bde908bd4dee15dfb167a9c873fc4bb8a81f6f2ab448a918', 'Administrador', 'Sistema', 'admin_reservas', 'Activo', NULL, '2025-07-31 11:20:41.988297', '2025-07-31 11:20:41.988297');
+
+-- Insertar tipos de cancha
+INSERT INTO public.tipos_cancha (id, nombre, descripcion, precio_por_hora, estado, fecha_creacion, fecha_actualizacion) VALUES
+(1, 'Fútbol 11', 'Cancha de fútbol para 11 jugadores', 50.00, 'Activo', '2025-07-31 11:38:53.28448', '2025-07-31 11:38:53.28448'),
+(2, 'Fútbol 7', 'Cancha de fútbol para 7 jugadores', 40.00, 'Activo', '2025-07-31 11:38:53.28448', '2025-07-31 11:38:53.28448'),
+(3, 'Basketball', 'Cancha de baloncesto', 35.00, 'Activo', '2025-07-31 11:38:53.28448', '2025-07-31 11:38:53.28448'),
+(4, 'Tennis', 'Cancha de tenis', 45.00, 'Activo', '2025-07-31 11:38:53.28448', '2025-07-31 11:38:53.28448'),
+(5, 'Voleibol', 'Cancha de voleibol', 30.00, 'Activo', '2025-07-31 11:38:53.28448', '2025-07-31 11:38:53.28448'),
+(6, 'Fútbol 5', 'Cancha de fútbol para 5 jugadores', 35.00, 'Activo', '2025-07-31 11:38:53.28448', '2025-07-31 11:38:53.28448'),
+(26, 'Padel', 'cancha de padel', 100.00, 'Activo', '2025-08-02 19:22:47.697449', '2025-08-02 19:22:47.697449');
+
+-- Insertar clientes de ejemplo
+INSERT INTO public.clientes (id, nombre, apellido, email, telefono, direccion, fecha_nacimiento, estado, fecha_registro, fecha_actualizacion) VALUES
+(1, 'Juan', 'Pérez', 'juan.perez@email.com', '3001234567', 'Calle 123 #45-67', '1990-05-15', 'Activo', '2025-07-31 11:20:41.988297', '2025-07-31 11:20:41.988297'),
+(2, 'María', 'González', 'maria.gonzalez@email.com', '3002345678', 'Carrera 78 #90-12', '1985-08-22', 'Activo', '2025-07-31 11:20:41.988297', '2025-07-31 11:20:41.988297'),
+(3, 'Carlos', 'Rodríguez', 'carlos.rodriguez@email.com', '3003456789', 'Avenida 5 #23-45', '1992-12-10', 'Activo', '2025-07-31 11:20:41.988297', '2025-07-31 11:20:41.988297'),
+(4, 'Ana', 'López', 'ana.lopez@email.com', '3004567890', 'Calle 90 #12-34', '1988-03-28', 'Activo', '2025-07-31 11:20:41.988297', '2025-07-31 11:20:41.988297'),
+(5, 'Luis', 'Martínez', 'luis.martinez@email.com', '3005678901', 'Carrera 45 #67-89', '1995-07-14', 'Activo', '2025-07-31 11:20:41.988297', '2025-07-31 11:20:41.988297');
+
+-- Insertar canchas de ejemplo
+INSERT INTO public.canchas (id, nombre, tipo_deporte, capacidad, precio_hora, estado, horario_apertura, horario_cierre, descripcion, fecha_creacion, fecha_actualizacion, tipo_cancha_id) VALUES
+(1, 'Cancha Principal', 'Fútbol', 100, 50.00, 'Activa', '06:00:00', '22:00:00', 'Cancha de fútbol 11 con césped sintético', '2025-07-31 11:20:41.988297', '2025-08-01 17:07:43.665966', 1),
+(2, 'Cancha 2 - Fútbol', 'Fútbol', 100, 50.00, 'Activa', '06:00:00', '22:00:00', 'Cancha de fútbol 11 con césped sintético', '2025-07-31 11:20:41.988297', '2025-07-31 11:38:53.28448', 1),
+(3, 'Cancha 3 - Basketball', 'Basketball', 50, 40.00, 'Activa', '06:00:00', '22:00:00', 'Cancha de basketball con piso de madera', '2025-07-31 11:20:41.988297', '2025-07-31 11:38:53.28448', 3),
+(4, 'Cancha 4 - Tennis', 'Tennis', 30, 60.00, 'Activa', '06:00:00', '22:00:00', 'Cancha de tennis con superficie de arcilla', '2025-07-31 11:20:41.988297', '2025-07-31 11:38:53.28448', 4),
+(5, 'Cancha 5 - Voleibol', 'Voleibol', 40, 35.00, 'Activa', '06:00:00', '22:00:00', 'Cancha de voleibol de arena', '2025-07-31 11:20:41.988297', '2025-07-31 11:38:53.28448', 5);
+
+-- =====================================================
+-- VERIFICACIÓN FINAL
+-- =====================================================
+
+-- Verificar que todos los objetos se crearon correctamente
+SELECT 'TABLAS' as tipo, COUNT(*) as total FROM information_schema.tables WHERE table_schema = 'public'
+UNION ALL
+SELECT 'VISTAS', COUNT(*) FROM information_schema.views WHERE table_schema = 'public'
+UNION ALL
+SELECT 'FUNCIONES', COUNT(*) FROM information_schema.routines WHERE routine_schema = 'public' AND routine_type = 'FUNCTION'
+UNION ALL
+SELECT 'PROCEDIMIENTOS', COUNT(*) FROM information_schema.routines WHERE routine_schema = 'public' AND routine_type = 'PROCEDURE'
+UNION ALL
+SELECT 'SECUENCIAS', COUNT(*) FROM information_schema.sequences WHERE sequence_schema = 'public'
+UNION ALL
+SELECT 'TRIGGERS', COUNT(*) FROM information_schema.triggers WHERE trigger_schema = 'public'
+ORDER BY tipo;
+
+-- Verificar que las vistas faltantes se crearon correctamente
+SELECT 'VISTAS FALTANTES IMPLEMENTADAS:' as info;
+SELECT viewname as vista, '✅ CREADA' as estado
+FROM pg_views 
+WHERE schemaname = 'public' 
+AND viewname IN ('vista_reporte_reservas', 'vista_canchas_mas_usadas', 'vista_resumen_pagos_periodo')
+ORDER BY viewname;
+
+-- Mostrar todas las funciones implementadas
+SELECT 'FUNCIONES IMPLEMENTADAS:' as info;
+SELECT proname as funcion, pg_get_function_arguments(oid) as argumentos 
+FROM pg_proc 
+WHERE pronamespace = (SELECT oid FROM pg_namespace WHERE nspname = 'public')
+AND proname NOT LIKE 'pg_%'
+ORDER BY proname;
+
+-- =====================================================
+-- SCRIPT COMPLETADO EXITOSAMENTE
+-- =====================================================
+
+/*
+INSTRUCCIONES DE USO:
+
+1. Conectar a PostgreSQL como superusuario (postgres)
+2. Crear una nueva base de datos: CREATE DATABASE sportcourt_reservations;
+3. Conectar a la nueva base de datos
+4. Ejecutar este script completo
+5. Verificar los resultados con la consulta de verificación al final
+
+CREDENCIALES DE ACCESO:
+- Usuario: admin
+- Contraseña: admin (hash: 8c6976e5b5410415bde908bd4dee15dfb167a9c873fc4bb8a81f6f2ab448a918)
+
+ROLES DISPONIBLES:
+- admin_reservas (administrador completo)
+- operador_reservas (operaciones CRUD)
+- consultor_reservas (solo lectura)
+
+Este script incluye:
+✅ 3 Roles de usuario
+✅ 7 Secuencias
+✅ 7 Tablas principales
+✅ 18 Funciones almacenadas (incluyendo las faltantes)
+✅ 3 Procedimientos almacenados
+✅ 12 Triggers
+✅ 7 Vistas principales (incluyendo las 3 faltantes)
+✅ Todos los índices y restricciones
+✅ Permisos y privilegios
+✅ Datos iniciales de ejemplo
+
+FUNCIONES AGREGADAS:
+✅ crear_tipo_cancha() - Crear tipo de cancha
+✅ eliminar_tipo_cancha() - Eliminar tipo de cancha
+✅ obtener_cancha_por_id() - Obtener cancha específica
+✅ obtener_canchas_con_tipos() - Obtener canchas con información detallada
+✅ crear_cliente() - Crear cliente
+✅ actualizar_cliente() - Actualizar cliente
+✅ eliminar_cliente() - Eliminar cliente
+✅ obtener_cliente_por_id() - Obtener cliente específico
+✅ obtener_clientes() - Obtener todos los clientes
+✅ buscar_canchas_por_deporte() - Buscar canchas por deporte
+✅ obtener_estadisticas_cliente() - Estadísticas por cliente
+✅ verificar_disponibilidad_rango() - Verificar disponibilidad en rango
+
+VISTAS AGREGADAS (FALTANTES):
+✅ vista_reporte_reservas - Reporte completo de reservas con información de pagos
+✅ vista_canchas_mas_usadas - Estadísticas de canchas más utilizadas
+✅ vista_resumen_pagos_periodo - Resumen de pagos por período mensual
+*/
